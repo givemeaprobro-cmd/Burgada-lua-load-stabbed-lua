@@ -1,7 +1,7 @@
--- language: Lua (Roblox Luau), file: burgada_loader.lua
+-- language: Lua (Roblox Luau), file: Loader.lua
 -- executor: Delta Android (also PC)
 -- paste after attaching. standalone.
--- loads Rivals.lua or Stabbed.lua from the same repo by loadstring.
+-- loads Rivals.lua / Stabbed.lua / Spoofer.lua from the same repo by loadstring.
 
 -- ============================================================
 -- PRE-FLIGHT CLEANUP
@@ -36,6 +36,7 @@ local REPO_BASE = 'https://raw.githubusercontent.com/givemeaprobro-cmd/Burgada-l
 local URLS = {
     Rivals  = REPO_BASE .. 'Rivals.lua',
     Stabbed = REPO_BASE .. 'Stabbed.lua',
+    Spoofer = REPO_BASE .. 'spoofer.lua',
 }
 
 -- ============================================================
@@ -77,16 +78,9 @@ for _, u in ipairs(urls) do
     warn('[Burgada] failed:', u)
 end
 
-if not libSrc then
-    warn('[Burgada] ALL URLS FAILED')
-    return
-end
-
+if not libSrc then warn('[Burgada] ALL URLS FAILED'); return end
 local Library = loadstring(libSrc)()
-if not Library then
-    warn('[Burgada] Library nil')
-    return
-end
+if not Library then warn('[Burgada] Library nil'); return end
 
 Library.ShowToggleFrameInKeybinds = true
 Library.ShowCustomCursor          = false
@@ -124,14 +118,13 @@ local function loadTarget(name)
 
     local src = tryFetch(url)
     if not src or #src == 0 then
-        Library:Notify('Failed to fetch ' .. name .. '.lua — check the repo path')
+        Library:Notify('Failed to fetch ' .. name .. ' — check the repo path')
         warn('[Burgada] fetch failed for', url)
         return
     end
 
     -- sanity check: raw HTML would start with '<'
-    local firstChar = src:sub(1, 1)
-    if firstChar == '<' then
+    if src:sub(1, 1) == '<' then
         Library:Notify(name .. ' URL returned HTML — use a raw URL, not a blob URL')
         warn('[Burgada] HTML returned from', url, 'len', #src)
         return
@@ -161,12 +154,17 @@ GameGroup:AddButton('Stabbed', function()
     loadTarget('Stabbed')
 end)
 
+GameGroup:AddButton('Spoofer', function()
+    loadTarget('Spoofer')
+end)
+
 -- ============================================================
 -- INFO
 -- ============================================================
 local InfoGroup = SelectTab:AddRightGroupbox('Info')
-InfoGroup:AddLabel('Rivals  ->  combat, visuals, movement, anti-aim')
+InfoGroup:AddLabel('Rivals  ->  combat, visuals, movement, bypass, anti-aim')
 InfoGroup:AddLabel('Stabbed ->  rage backstab loop')
+InfoGroup:AddLabel('Spoofer ->  cosmetics, VM chams, weather, FX, name spoof')
 InfoGroup:AddLabel('')
 InfoGroup:AddLabel('Loading replaces this window with the selected suite.')
 InfoGroup:AddLabel('Re-run the loader to switch games.')
@@ -174,4 +172,4 @@ InfoGroup:AddLabel('Re-run the loader to switch games.')
 -- ============================================================
 -- READY
 -- ============================================================
-Library:Notify('Burgada Loader ready — pick Rivals or Stabbed')
+Library:Notify('Burgada Loader ready — pick Rivals, Stabbed, or Spoofer')
