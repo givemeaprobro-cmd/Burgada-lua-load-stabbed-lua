@@ -1,4 +1,4 @@
--- language: Lua (Roblox Luau), file: burgada_rivals.lua
+-- language: Lua (Roblox Luau), file: Rivals.lua
 -- executor: Delta Android (also PC)
 -- paste after attaching. standalone. self-cleaning.
 
@@ -11,6 +11,7 @@ pcall(function()
     if RivalsAA then RivalsAA:Disconnect() end
     if RivalsRender then RivalsRender:Disconnect() end
     if RivalsHud then RivalsHud:Disconnect() end
+    if RivalsRage then RivalsRage:Disconnect() end
     if BurgadaRivalsUnload then pcall(BurgadaRivalsUnload) end
 end)
 pcall(function()
@@ -108,6 +109,8 @@ Library.NotifySide                = 'Left'
 local Players    = game:GetService('Players')
 local RunService = game:GetService('RunService')
 local LP         = Players.LocalPlayer
+local UIS        = game:GetService('UserInputService')
+local VIM        = game:GetService('VirtualInputManager')
 
 -- ============================================================
 -- STATE
@@ -117,12 +120,34 @@ local State = {
     hitbox   = { active = false, size = 10, applied = {} },
     voidhide = { active = false, anchored = false },
     voidspam = { active = false, dist = 15000, acc = 0, interval = 0.15 },
-    sling    = { active = false, height = 10 },
     contact  = { active = false, range = 30, height = 5, cooldown = 0.15,
                  last = 0, conns = {}, rebindConn = nil },
+
+    sling    = {
+        active = false, height = 10,
+        sticky = false, stickyTarget = nil,
+        mode = 'Nearest', -- Nearest / Sticky
+    },
+
+    knife    = {
+        active = false, behindOffset = 1.5, upOffset = 1,
+        mode = 'Behind', -- Inside / Behind
+        sticky = false, stickyTarget = nil,
+    },
+
+    frontAbuse = { active = false, forward = 4, upOffset = 2, sticky = false, stickyTarget = nil },
+
+    ragebot  = {
+        active = false, behindOffset = 1, upOffset = 0,
+        sticky = false, stickyTarget = nil,
+        holdClick = true, clickRate = 0.05,
+        lastClick = 0,
+    },
+
     esp      = { active = false, box = true, name = true, dist = true,
                  teamCheck = true, maxDist = 500 },
     hud      = { active = false, gui = nil, frame = nil, labels = {}, last = 0 },
+
     aa = {
         upsideDown = false, sideways = false, backwards = false,
         prone = false, lyingFlat = false,
@@ -174,42 +199,54 @@ local function alive()
     return false, c, h, r
 end
 
-local function nearestRoot()
+local function isValidTarget(entry)
+    if not entry then return false end
+    if not entry.player or not entry.hrp or not entry.hum then return false end
+    if not entry.hrp.Parent or not entry.hum.Parent then return false end
+    if entry.hum.Health <= 0 then return false end
+    return true
+end
+
+local function playersList()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP and p.Character then
+            local hrp = p.Character:FindFirstChild('HumanoidRootPart')
+            local hum = p.Character:FindFirstChildOfClass('Humanoid')
+            if hrp and hum and hum.Health > 0 then
+                table.insert(list, { player = p, hrp = hrp, hum = hum })
+            end
+        end
+    end
+    return list
+end
+
+local function nearestTarget()
     local ok, _, _, myRoot = alive()
     if not ok or not myRoot then return nil end
     local best, bestD = nil, math.huge
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LP and p.Character then
-            local r = p.Character:FindFirstChild('HumanoidRootPart')
-            if r then
-                local d = (myRoot.Position - r.Position).Magnitude
-                if d < bestD then bestD, best = d, r end
-            end
-        end
+    for _, t in ipairs(playersList()) do
+        local d = (myRoot.Position - t.hrp.Position).Magnitude
+        if d < bestD then bestD, best = d, t end
     end
     return best
 end
 
-local function isEnemy(p)
-    if p == LP then return false end
-    if not State.esp.teamCheck then return true end
-    if LP.Team and p.Team and LP.Team == p.Team then return false end
-    return true
-end
+-- select target for a given feature: sticky or nearest
+local function pickTarget(feat)
+    local ok, _, _, myRoot = alive()
+    if not ok or not myRoot then return nil end
 
-local function isAAActive()
-    local a = State.aa
-    if a.upsideDown or a.sideways or a.backwards or a.prone or a.lyingFlat then return true end
-    if a.spin360.active or a.jitterYaw.active or a.jitterPitch.active then return true end
-    if a.lean.active or a.rollFlip.active then return true end
-    if a.microJitter.active or a.shake.active or a.stutter.active or a.bob.active then return true end
-    if a.cameraLockDown or a.cameraLockUp or a.cameraLockBack or a.cameraSpin.active then return true end
-    if a.headSpin.active or a.headDown or a.headBack or a.headJitter.active then return true end
-    if a.hoverOnGround.active or a.sinkIntoGround.active or a.freezeInAir then return true end
-    if a.cframeDesync.active or a.zeroVelocity then return true end
-    if a.aimBotLookingAt or a.aimBotFacingAway or a.crouchWalk then return true end
-    if a.orbitHead.active or a.twerkLoop.active or a.tiltIdle.active then return true end
-    return false
+    if feat.sticky then
+        if isValidTarget(feat.stickyTarget) then
+            return feat.stickyTarget
+        end
+        -- sticky target lost, re-acquire
+        feat.stickyTarget = nearestTarget()
+        return feat.stickyTarget
+    end
+
+    return nearestTarget()
 end
 
 -- ============================================================
@@ -303,47 +340,53 @@ local function espTick()
     local myPos = myRoot and myRoot.Position or Vector3.zero
 
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LP and p.Character and isEnemy(p) then
-            local head = p.Character:FindFirstChild('Head')
-            local hrp  = p.Character:FindFirstChild('HumanoidRootPart')
-            local hum  = p.Character:FindFirstChildOfClass('Humanoid')
-            if head and hrp and hum and hum.Health > 0 then
-                local dist = (myPos - hrp.Position).Magnitude
-                if dist <= State.esp.maxDist then
-                    local hp, ho = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-                    local fp, fo = cam:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
-                    if not espParts[p] then
-                        espParts[p] = {
-                            box  = newDrawing('Square', { Thickness = 1, Filled = false, Color = Color3.fromRGB(255, 60, 60) }),
-                            name = newDrawing('Text',   { Size = 14, Center = true, Outline = true, Color = Color3.fromRGB(255, 255, 255) }),
-                            dist = newDrawing('Text',   { Size = 12, Center = true, Outline = true, Color = Color3.fromRGB(200, 200, 200) }),
-                        }
-                    end
-                    local t = espParts[p]
-                    if ho and fo then
-                        local h = math.abs(fp.Y - hp.Y)
-                        local w = h * 0.55
-                        local x = hp.X - w / 2
-                        local y = hp.Y
-                        if State.esp.box then
-                            t.box.Visible = true
-                            t.box.Size = Vector2.new(w, h)
-                            t.box.Position = Vector2.new(x, y)
-                        else t.box.Visible = false end
-                        if State.esp.name then
-                            t.name.Visible = true
-                            t.name.Text = p.Name
-                            t.name.Position = Vector2.new(hp.X, y - 16)
-                        else t.name.Visible = false end
-                        if State.esp.dist then
-                            t.dist.Visible = true
-                            t.dist.Text = string.format('%dm', math.floor(dist))
-                            t.dist.Position = Vector2.new(hp.X, y + h + 4)
-                        else t.dist.Visible = false end
-                    else
-                        t.box.Visible = false
-                        t.name.Visible = false
-                        t.dist.Visible = false
+        if p ~= LP and p.Character then
+            local skip = false
+            if State.esp.teamCheck and LP.Team and p.Team and LP.Team == p.Team then
+                skip = true
+            end
+            if not skip then
+                local head = p.Character:FindFirstChild('Head')
+                local hrp  = p.Character:FindFirstChild('HumanoidRootPart')
+                local hum  = p.Character:FindFirstChildOfClass('Humanoid')
+                if head and hrp and hum and hum.Health > 0 then
+                    local dist = (myPos - hrp.Position).Magnitude
+                    if dist <= State.esp.maxDist then
+                        local hp, ho = cam:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                        local fp, fo = cam:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+                        if not espParts[p] then
+                            espParts[p] = {
+                                box  = newDrawing('Square', { Thickness = 1, Filled = false, Color = Color3.fromRGB(255, 60, 60) }),
+                                name = newDrawing('Text',   { Size = 14, Center = true, Outline = true, Color = Color3.fromRGB(255, 255, 255) }),
+                                dist = newDrawing('Text',   { Size = 12, Center = true, Outline = true, Color = Color3.fromRGB(200, 200, 200) }),
+                            }
+                        end
+                        local t = espParts[p]
+                        if ho and fo then
+                            local h = math.abs(fp.Y - hp.Y)
+                            local w = h * 0.55
+                            local x = hp.X - w / 2
+                            local y = hp.Y
+                            if State.esp.box then
+                                t.box.Visible = true
+                                t.box.Size = Vector2.new(w, h)
+                                t.box.Position = Vector2.new(x, y)
+                            else t.box.Visible = false end
+                            if State.esp.name then
+                                t.name.Visible = true
+                                t.name.Text = p.Name
+                                t.name.Position = Vector2.new(hp.X, y - 16)
+                            else t.name.Visible = false end
+                            if State.esp.dist then
+                                t.dist.Visible = true
+                                t.dist.Text = string.format('%dm', math.floor(dist))
+                                t.dist.Position = Vector2.new(hp.X, y + h + 4)
+                            else t.dist.Visible = false end
+                        else
+                            t.box.Visible = false
+                            t.name.Visible = false
+                            t.dist.Visible = false
+                        end
                     end
                 end
             end
@@ -352,7 +395,7 @@ local function espTick()
 end
 
 -- ============================================================
--- HUD
+-- TARGET HUD
 -- ============================================================
 local function ensureHudGui()
     if State.hud.gui and State.hud.gui.Parent then return end
@@ -439,17 +482,13 @@ local function hudTick()
     local now = os.clock()
     if now - State.hud.last < 0.1 then return end
     State.hud.last = now
-    local target = nearestRoot()
+    local target = nearestTarget()
     if not target then State.hud.frame.Visible = false; return end
-    local p = Players:GetPlayerFromCharacter(target.Parent)
-    if not p or not isEnemy(p) then State.hud.frame.Visible = false; return end
-    local hum = target.Parent:FindFirstChildOfClass('Humanoid')
-    if not hum then State.hud.frame.Visible = false; return end
     local _, _, _, myRoot = alive()
-    local dist = myRoot and math.floor((myRoot.Position - target.Position).Magnitude) or 0
-    local pct = math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
+    local dist = myRoot and math.floor((myRoot.Position - target.hrp.Position).Magnitude) or 0
+    local pct = math.clamp(target.hum.Health / math.max(target.hum.MaxHealth, 1), 0, 1)
     State.hud.frame.Visible = true
-    State.hud.labels.name.Text = p.Name
+    State.hud.labels.name.Text = target.player.Name
     State.hud.labels.dist.Text = string.format('%d studs', dist)
     State.hud.labels.hpFg.Size = UDim2.new(pct, 0, 1, 0)
 end
@@ -457,6 +496,21 @@ end
 -- ============================================================
 -- ANTI-AIM
 -- ============================================================
+local function isAAActive()
+    local a = State.aa
+    if a.upsideDown or a.sideways or a.backwards or a.prone or a.lyingFlat then return true end
+    if a.spin360.active or a.jitterYaw.active or a.jitterPitch.active then return true end
+    if a.lean.active or a.rollFlip.active then return true end
+    if a.microJitter.active or a.shake.active or a.stutter.active or a.bob.active then return true end
+    if a.cameraLockDown or a.cameraLockUp or a.cameraLockBack or a.cameraSpin.active then return true end
+    if a.headSpin.active or a.headDown or a.headBack or a.headJitter.active then return true end
+    if a.hoverOnGround.active or a.sinkIntoGround.active or a.freezeInAir then return true end
+    if a.cframeDesync.active or a.zeroVelocity then return true end
+    if a.aimBotLookingAt or a.aimBotFacingAway or a.crouchWalk then return true end
+    if a.orbitHead.active or a.twerkLoop.active or a.tiltIdle.active then return true end
+    return false
+end
+
 local function antiAimTick(dt)
     if not isAAActive() then return end
     local ok, c, hum, myRoot = alive()
@@ -526,12 +580,12 @@ local function antiAimTick(dt)
         end
     end
     if a.aimBotLookingAt then
-        local t = nearestRoot()
-        if t then newRot = CFrame.lookAt(Vector3.zero, (t.Position - pos)) end
+        local t = nearestTarget()
+        if t then newRot = CFrame.lookAt(Vector3.zero, (t.hrp.Position - pos)) end
     end
     if a.aimBotFacingAway then
-        local t = nearestRoot()
-        if t then newRot = CFrame.lookAt(Vector3.zero, (pos - t.Position)) end
+        local t = nearestTarget()
+        if t then newRot = CFrame.lookAt(Vector3.zero, (pos - t.hrp.Position)) end
     end
 
     myRoot.CFrame = CFrame.new(pos) * newRot
@@ -674,16 +728,6 @@ local function fillTick(dt)
     if n > 500 then n = 500 end
     if n < 1 then n = 1 end
     local total = #f.cells
-    local target = nearestRoot()
-    local lookDir
-    if target then
-        local away = myRoot.Position - target.Position
-        away = Vector3.new(away.X, 0, away.Z)
-        if away.Magnitude > 0.01 then lookDir = away.Unit
-        else lookDir = Vector3.new(0, 0, 1) end
-    else
-        lookDir = Vector3.new(0, 0, 1)
-    end
     for i = 1, n do
         f.idx = f.idx + 1
         if f.idx > total then f.idx = 1 end
@@ -693,7 +737,102 @@ local function fillTick(dt)
     local standY = floorY - f.depth
     if standY < floorY - 40 then standY = floorY - 40 end
     local standPos = Vector3.new(cell.X, standY, cell.Z)
-    myRoot.CFrame = CFrame.new(standPos, standPos + lookDir)
+    myRoot.CFrame = CFrame.new(standPos, standPos + Vector3.new(0, 0, 1))
+end
+
+-- ============================================================
+-- BYPASS — sling (sticky follow, locked height)
+-- ============================================================
+local function slingTick()
+    if not State.sling.active then return end
+    local _, _, _, myRoot = alive()
+    if not myRoot then return end
+
+    local t = pickTarget(State.sling)
+    if not t then return end
+
+    -- locked at t.hrp.Y + height, tracks them horizontally
+    local pos = Vector3.new(t.hrp.Position.X, t.hrp.Position.Y + State.sling.height, t.hrp.Position.Z)
+    myRoot.CFrame = CFrame.new(pos, t.hrp.Position)
+end
+
+-- ============================================================
+-- BYPASS — knife abuse (inside or behind + sticky)
+-- ============================================================
+local function knifeTick()
+    if not State.knife.active then return end
+    local _, _, _, myRoot = alive()
+    if not myRoot then return end
+
+    local t = pickTarget(State.knife)
+    if not t then return end
+
+    local targetPos = t.hrp.Position
+    local lookVec = t.hrp.CFrame.LookVector
+
+    local landPos
+    if State.knife.mode == 'Inside' then
+        landPos = targetPos + Vector3.new(0, State.knife.upOffset, 0)
+    else
+        landPos = targetPos - lookVec * State.knife.behindOffset + Vector3.new(0, State.knife.upOffset, 0)
+    end
+
+    myRoot.CFrame = CFrame.new(landPos, targetPos)
+end
+
+-- ============================================================
+-- BYPASS — front abuse (moved from riot)
+-- ============================================================
+local function frontAbuseTick()
+    if not State.frontAbuse.active then return end
+    local _, _, _, myRoot = alive()
+    if not myRoot then return end
+
+    local t = pickTarget(State.frontAbuse)
+    if not t then return end
+
+    local targetPos = t.hrp.Position
+    local front = targetPos + t.hrp.CFrame.LookVector * State.frontAbuse.forward + Vector3.new(0, State.frontAbuse.upOffset, 0)
+    myRoot.CFrame = CFrame.new(front, front + t.hrp.CFrame.LookVector)
+end
+
+-- ============================================================
+-- RAGEBOT — 1 stud behind, look at them, spam left click
+-- ============================================================
+local function fireClick()
+    -- VirtualInputManager simulates a real left-click; falls back to mouse1click
+    pcall(function()
+        VIM:SendMouseButtonEvent(0, 0, 0, true,  game, 0)
+        task.wait()
+        VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    end)
+    pcall(function() mouse1click() end)
+    pcall(function() mouse1down(); mouse1up() end)
+end
+
+local function ragebotTick()
+    if not State.ragebot.active then return end
+    local _, _, _, myRoot = alive()
+    if not myRoot then return end
+
+    local t = pickTarget(State.ragebot)
+    if not t then return end
+
+    local targetPos = t.hrp.Position
+    local lookVec = t.hrp.CFrame.LookVector
+    local landPos = targetPos - lookVec * State.ragebot.behindOffset + Vector3.new(0, State.ragebot.upOffset, 0)
+
+    -- place behind + face them
+    myRoot.CFrame = CFrame.new(landPos, targetPos)
+
+    -- hold / spam click
+    if State.ragebot.holdClick then
+        local now = os.clock()
+        if now - State.ragebot.lastClick >= State.ragebot.clickRate then
+            State.ragebot.lastClick = now
+            fireClick()
+        end
+    end
 end
 
 -- ============================================================
@@ -715,7 +854,7 @@ local Tabs = {
     Combat          = Window:AddTab('Combat'),
     Visuals         = Window:AddTab('Visuals'),
     Movement        = Window:AddTab('Movement'),
-    Sling           = Window:AddTab('Sling'),
+    Bypass          = Window:AddTab('Bypass'),
     ['Anti-Aim']    = Window:AddTab('Anti-Aim'),
     ['UI Settings'] = Window:AddTab('UI Settings'),
 }
@@ -810,19 +949,86 @@ MGroup:AddSlider('VoidspamHop', { Text = 'Hop Interval (s)', Default = 0.15, Min
     Callback = function(v) State.voidspam.interval = v end })
 
 -- ============================================================
--- SLING UI
+-- BYPASS UI (formerly Sling)
 -- ============================================================
-local SGroup = Tabs.Sling:AddLeftGroupbox('Sticky Sling')
-SGroup:AddToggle('SlingToggle', { Text = 'Enable Snap Sling', Default = false,
-    Callback = function(v) State.sling.active = v end })
-SGroup:AddSlider('SlingHeight', { Text = 'Height Above Target', Default = 10, Min = 2, Max = 30, Rounding = 0,
+local BpSling = Tabs.Bypass:AddLeftGroupbox('Sticky Sling')
+BpSling:AddToggle('SlingToggle', { Text = 'Enable Sling', Default = false,
+    Callback = function(v)
+        State.sling.active = v
+        if not v then State.sling.stickyTarget = nil end
+    end })
+BpSling:AddSlider('SlingHeight', { Text = 'Height Above Target', Default = 10, Min = 2, Max = 30, Rounding = 0,
     Callback = function(v) State.sling.height = v end })
+BpSling:AddToggle('SlingSticky', { Text = 'Sticky Target', Default = false,
+    Callback = function(v)
+        State.sling.sticky = v
+        State.sling.stickyTarget = nil -- toggling resets sticky
+    end })
+
+local BpKnife = Tabs.Bypass:AddLeftGroupbox('Knife Bypass')
+BpKnife:AddToggle('KnifeToggle', { Text = 'Enable Knife Bypass', Default = false,
+    Callback = function(v)
+        State.knife.active = v
+        if not v then State.knife.stickyTarget = nil end
+    end })
+BpKnife:AddDropdown('KnifeMode', {
+    Values = { 'Behind', 'Inside' },
+    Default = 'Behind',
+    Multi = false,
+    Text = 'Placement',
+    Callback = function(v) State.knife.mode = v end,
+})
+BpKnife:AddSlider('KnifeBehind', { Text = 'Behind Offset (studs)', Default = 1.5, Min = 0.1, Max = 8, Rounding = 1,
+    Callback = function(v) State.knife.behindOffset = v end })
+BpKnife:AddSlider('KnifeUp', { Text = 'Up Offset (studs)', Default = 1, Min = 0, Max = 6, Rounding = 1,
+    Callback = function(v) State.knife.upOffset = v end })
+BpKnife:AddToggle('KnifeSticky', { Text = 'Sticky Target', Default = false,
+    Callback = function(v)
+        State.knife.sticky = v
+        State.knife.stickyTarget = nil
+    end })
+
+local BpFront = Tabs.Bypass:AddLeftGroupbox('Front Abuse')
+BpFront:AddToggle('FrontToggle', { Text = 'Enable Front Abuse', Default = false,
+    Callback = function(v)
+        State.frontAbuse.active = v
+        if not v then State.frontAbuse.stickyTarget = nil end
+    end })
+BpFront:AddSlider('FrontForward', { Text = 'Forward Offset (studs)', Default = 4, Min = 1, Max = 10, Rounding = 1,
+    Callback = function(v) State.frontAbuse.forward = v end })
+BpFront:AddSlider('FrontUp', { Text = 'Up Offset (studs)', Default = 2, Min = 0, Max = 8, Rounding = 1,
+    Callback = function(v) State.frontAbuse.upOffset = v end })
+BpFront:AddToggle('FrontSticky', { Text = 'Sticky Target', Default = false,
+    Callback = function(v)
+        State.frontAbuse.sticky = v
+        State.frontAbuse.stickyTarget = nil
+    end })
+
+local BpRage = Tabs.Bypass:AddRightGroupbox('Ragebot')
+BpRage:AddToggle('RageToggle', { Text = 'Enable Ragebot', Default = false,
+    Callback = function(v)
+        State.ragebot.active = v
+        if not v then State.ragebot.stickyTarget = nil end
+    end })
+BpRage:AddSlider('RageBehind', { Text = 'Behind Offset (studs)', Default = 1, Min = 0.1, Max = 5, Rounding = 1,
+    Callback = function(v) State.ragebot.behindOffset = v end })
+BpRage:AddSlider('RageUp', { Text = 'Up Offset (studs)', Default = 0, Min = 0, Max = 4, Rounding = 1,
+    Callback = function(v) State.ragebot.upOffset = v end })
+BpRage:AddToggle('RageClick', { Text = 'Hold / Spam Left Click', Default = true,
+    Callback = function(v) State.ragebot.holdClick = v end })
+BpRage:AddSlider('RageClickRate', { Text = 'Click Rate (s)', Default = 0.05, Min = 0.01, Max = 0.5, Rounding = 2,
+    Callback = function(v) State.ragebot.clickRate = v end })
+BpRage:AddToggle('RageSticky', { Text = 'Sticky Target', Default = false,
+    Callback = function(v)
+        State.ragebot.sticky = v
+        State.ragebot.stickyTarget = nil
+    end })
 
 -- ============================================================
 -- ANTI-AIM UI
 -- ============================================================
 local AaA = Tabs['Anti-Aim']:AddLeftGroupbox('Orientation')
-AaA:AddToggle('AAUpsideDown', { Text = 'Upside Down (flip only)', Default = false,
+AaA:AddToggle('AAUpsideDown', { Text = 'Upside Down', Default = false,
     Callback = function(v) State.aa.upsideDown = v end })
 AaA:AddToggle('AASideways', { Text = 'Sideways', Default = false,
     Callback = function(v) State.aa.sideways = v end })
@@ -1028,21 +1234,12 @@ local function orbitTick(dt)
     if not State.orbit.active then return end
     local _, _, _, myRoot = alive()
     if not myRoot then return end
-    local target = nearestRoot()
-    if not target then return end
+    local t = nearestTarget()
+    if not t then return end
     orbitAngle = orbitAngle + State.orbit.speed * dt
     local r = State.orbit.radius
     local off = Vector3.new(math.cos(orbitAngle) * r, 2, math.sin(orbitAngle) * r)
-    myRoot.CFrame = CFrame.new(target.Position + off, target.Position)
-end
-
-local function slingTick()
-    if not State.sling.active then return end
-    local _, _, _, myRoot = alive()
-    if not myRoot then return end
-    local target = nearestRoot()
-    if not target then return end
-    myRoot.CFrame = CFrame.new(target.Position + Vector3.new(0, State.sling.height, 0), target.Position)
+    myRoot.CFrame = CFrame.new(t.hrp.Position + off, t.hrp.Position)
 end
 
 local function voidHideTick()
@@ -1079,14 +1276,16 @@ RivalsConn = RunService.Heartbeat:Connect(function(dt)
     if (State.voidhide.active and State.voidhide.anchored) or State.voidspam.active then return end
     fillTick(dt)
     if State.fill.active and State.fill.running then return end
-    if State.sling.active then return end
-    orbitTick(dt)
 end)
 
 RivalsHitbox = RunService.Heartbeat:Connect(hitboxTick)
 RivalsAA = RunService.RenderStepped:Connect(antiAimTick)
 RivalsRender = RunService.RenderStepped:Connect(function()
     slingTick()
+    knifeTick()
+    frontAbuseTick()
+    ragebotTick()
+    orbitTick(0.0166)
     espTick()
 end)
 RivalsHud = RunService.Heartbeat:Connect(hudTick)
@@ -1100,6 +1299,7 @@ function BurgadaRivalsUnload()
     if RivalsAA then RivalsAA:Disconnect() end
     if RivalsRender then RivalsRender:Disconnect() end
     if RivalsHud then RivalsHud:Disconnect() end
+    if RivalsRage then RivalsRage:Disconnect() end
 
     unbindContact()
     if State.hud.gui then pcall(function() State.hud.gui:Destroy() end) end
