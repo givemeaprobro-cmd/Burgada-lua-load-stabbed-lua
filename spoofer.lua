@@ -477,3 +477,628 @@ end
 --   ;(function()
 --       ... lighting engine, presets, holograms, beam tracers, kill effects ...
 --   end)()
+-- language: Lua (Roblox Luau), file: spoofer.lua
+-- chunk 2/4 — Visuals engine (lighting, holograms, beams, FX UI)
+
+local Visuals = {}
+;(function()
+    local _origLighting, _origClones = nil, {}
+    local _hologramFolder, _hologramCooldowns = nil, {}
+    local _stretchBound, _rainbowConn = false, nil
+    local _rainbowParts, _rainbowHue, _rainbowBatchIdx = {}, 0, 1
+    local _perfBackup, _origParticleRates = nil, {}
+    local _reassertConn, _reassertLastT = nil, 0
+    local LIGHTING_PROPS = {
+        "Brightness","ExposureCompensation","GlobalShadows","ShadowSoftness",
+        "EnvironmentDiffuseScale","EnvironmentSpecularScale","ClockTime",
+        "OutdoorAmbient","Ambient","FogEnd","FogStart","FogColor",
+        "ColorShift_Top","ColorShift_Bottom",
+    }
+    local function snapshotLighting()
+        if _origLighting then return end
+        _origLighting = {}
+        for _, p in ipairs(LIGHTING_PROPS) do
+            local ok, v = pcall(function() return Lighting[p] end)
+            if ok then _origLighting[p] = v end
+        end
+        for _, c in ipairs(Lighting:GetChildren()) do
+            if not c:GetAttribute("VS_Custom") then
+                local ok, clone = pcall(function() return c:Clone() end)
+                if ok and clone then table.insert(_origClones, clone) end
+            end
+        end
+    end
+    local function clearTagged()
+        for _, c in ipairs(Lighting:GetChildren()) do
+            if c:GetAttribute("VS_Custom") then c:Destroy() end
+        end
+    end
+    local function restore()
+        if not _origLighting then return end
+        clearTagged()
+        for k, v in pairs(_origLighting) do pcall(function() Lighting[k] = v end) end
+        local exist = {}
+        for _, c in ipairs(Lighting:GetChildren()) do exist[c.Name] = true end
+        for _, clone in ipairs(_origClones) do
+            if not exist[clone.Name] then clone:Clone().Parent = Lighting end
+        end
+    end
+    local function fx(cls, props)
+        local f = Instance.new(cls)
+        f:SetAttribute("VS_Custom", true)
+        for k, v in pairs(props) do f[k] = v end
+        f.Parent = Lighting
+        return f
+    end
+    local Presets = {}
+    Presets.Neutral = function()
+        clearTagged()
+        Lighting.Brightness = 2; Lighting.ExposureCompensation = 0
+        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.2
+        Lighting.EnvironmentDiffuseScale = 0.5; Lighting.EnvironmentSpecularScale = 0.5
+        Lighting.ClockTime = 14; Lighting.OutdoorAmbient = Color3.fromRGB(70,70,70)
+        Lighting.Ambient = Color3.fromRGB(0,0,0); Lighting.FogEnd = 100000
+        fx("Atmosphere", { Density=0.3, Offset=0.25, Color=Color3.fromRGB(199,199,199),
+            Decay=Color3.fromRGB(106,112,125), Glare=0, Haze=0 })
+    end
+    Presets.Cyberpunk = function()
+        clearTagged()
+        Lighting.Brightness = 2.6; Lighting.ExposureCompensation = 0.5
+        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.7
+        Lighting.EnvironmentDiffuseScale = 0.7; Lighting.EnvironmentSpecularScale = 1
+        Lighting.ClockTime = 0; Lighting.OutdoorAmbient = Color3.fromRGB(120,80,165)
+        Lighting.Ambient = Color3.fromRGB(80,55,120)
+        fx("Atmosphere", { Density=0.3, Offset=0.3, Color=Color3.fromRGB(160,70,215),
+            Decay=Color3.fromRGB(75,200,240), Glare=2.2, Haze=1 })
+        fx("BloomEffect", { Intensity=1.15, Size=24, Threshold=0.72 })
+        fx("ColorCorrectionEffect", { Brightness=0.04, Contrast=0.2, Saturation=0.45,
+            TintColor=Color3.fromRGB(220,195,255) })
+    end
+    Presets.Anime = function()
+        clearTagged()
+        Lighting.Brightness = 2.3; Lighting.ExposureCompensation = 0.2
+        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.7
+        Lighting.EnvironmentDiffuseScale = 0.7; Lighting.EnvironmentSpecularScale = 0.7
+        Lighting.ClockTime = 15; Lighting.OutdoorAmbient = Color3.fromRGB(150,140,170)
+        Lighting.Ambient = Color3.fromRGB(95,85,120)
+        fx("Atmosphere", { Density=0.28, Offset=0.35, Color=Color3.fromRGB(255,200,230),
+            Decay=Color3.fromRGB(150,195,255), Glare=1, Haze=0.8 })
+        fx("BloomEffect", { Intensity=1.0, Size=26, Threshold=0.8 })
+        fx("ColorCorrectionEffect", { Brightness=0.03, Contrast=0.14, Saturation=0.32,
+            TintColor=Color3.fromRGB(255,228,242) })
+    end
+    Presets.Sunset = function()
+        clearTagged()
+        Lighting.Brightness = 2.3; Lighting.ExposureCompensation = 0.4
+        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.5
+        Lighting.EnvironmentDiffuseScale = 0.75; Lighting.EnvironmentSpecularScale = 0.9
+        Lighting.ClockTime = 17.75; Lighting.OutdoorAmbient = Color3.fromRGB(185,115,80)
+        Lighting.Ambient = Color3.fromRGB(105,60,45)
+        fx("Atmosphere", { Density=0.38, Offset=0.55, Color=Color3.fromRGB(255,150,80),
+            Decay=Color3.fromRGB(255,105,60), Glare=1.8, Haze=1.6 })
+        fx("BloomEffect", { Intensity=0.9, Size=24, Threshold=0.78 })
+        fx("ColorCorrectionEffect", { Brightness=0.03, Contrast=0.16, Saturation=0.32,
+            TintColor=Color3.fromRGB(255,195,150) })
+    end
+    Presets.Vaporwave = function()
+        clearTagged()
+        Lighting.Brightness = 2.3; Lighting.ExposureCompensation = 0.4
+        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.7
+        Lighting.EnvironmentDiffuseScale = 0.6; Lighting.EnvironmentSpecularScale = 0.9
+        Lighting.ClockTime = 18.4; Lighting.OutdoorAmbient = Color3.fromRGB(150,90,165)
+        Lighting.Ambient = Color3.fromRGB(95,60,120)
+        fx("Atmosphere", { Density=0.34, Offset=0.4, Color=Color3.fromRGB(255,130,205),
+            Decay=Color3.fromRGB(110,200,255), Glare=1.8, Haze=1.3 })
+        fx("BloomEffect", { Intensity=1.05, Size=26, Threshold=0.74 })
+        fx("ColorCorrectionEffect", { Brightness=0.04, Contrast=0.18, Saturation=0.38,
+            TintColor=Color3.fromRGB(255,205,240) })
+    end
+    Presets.Void = function()
+        clearTagged()
+        Lighting.Brightness = 2.0; Lighting.ExposureCompensation = 0.25
+        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.9
+        Lighting.EnvironmentDiffuseScale = 0.5; Lighting.EnvironmentSpecularScale = 0.7
+        Lighting.ClockTime = 0; Lighting.OutdoorAmbient = Color3.fromRGB(85,95,135)
+        Lighting.Ambient = Color3.fromRGB(55,62,95)
+        fx("Atmosphere", { Density=0.35, Offset=0.2, Color=Color3.fromRGB(55,65,110),
+            Decay=Color3.fromRGB(95,110,180), Glare=0.3, Haze=0.8 })
+        fx("BloomEffect", { Intensity=0.8, Size=22, Threshold=0.76 })
+        fx("ColorCorrectionEffect", { Brightness=0.03, Contrast=0.16, Saturation=-0.2,
+            TintColor=Color3.fromRGB(190,200,255) })
+    end
+    Presets.Clarity = function()
+        clearTagged()
+        Lighting.Brightness = 2.6; Lighting.ExposureCompensation = 0
+        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 1
+        Lighting.EnvironmentDiffuseScale = 0.2; Lighting.EnvironmentSpecularScale = 0.1
+        Lighting.ClockTime = 14; Lighting.OutdoorAmbient = Color3.fromRGB(150,150,155)
+        Lighting.Ambient = Color3.fromRGB(120,120,125); Lighting.FogEnd = 1000000
+        fx("ColorCorrectionEffect", { Brightness=0.05, Contrast=0.25, Saturation=-0.2,
+            TintColor=Color3.fromRGB(255,255,255) })
+    end
+    Presets.Toxic = function()
+        clearTagged()
+        Lighting.Brightness = 2.2; Lighting.ExposureCompensation = 0.35
+        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.7
+        Lighting.EnvironmentDiffuseScale = 0.6; Lighting.EnvironmentSpecularScale = 0.8
+        Lighting.ClockTime = 1; Lighting.OutdoorAmbient = Color3.fromRGB(80,135,70)
+        Lighting.Ambient = Color3.fromRGB(45,85,50)
+        fx("Atmosphere", { Density=0.34, Offset=0.35, Color=Color3.fromRGB(95,220,110),
+            Decay=Color3.fromRGB(55,180,80), Glare=1.8, Haze=1.4 })
+        fx("BloomEffect", { Intensity=1.1, Size=24, Threshold=0.74 })
+        fx("ColorCorrectionEffect", { Brightness=0.04, Contrast=0.2, Saturation=0.45,
+            TintColor=Color3.fromRGB(210,255,205) })
+    end
+    Presets.Sakura = function()
+        clearTagged()
+        Lighting.Brightness = 2.2; Lighting.ExposureCompensation = 0.35
+        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.8
+        Lighting.EnvironmentDiffuseScale = 0.7; Lighting.EnvironmentSpecularScale = 0.7
+        Lighting.ClockTime = 15.5; Lighting.OutdoorAmbient = Color3.fromRGB(200,155,180)
+        Lighting.Ambient = Color3.fromRGB(120,85,110)
+        fx("Atmosphere", { Density=0.3, Offset=0.4, Color=Color3.fromRGB(255,205,225),
+            Decay=Color3.fromRGB(255,175,215), Glare=1.2, Haze=1 })
+        fx("BloomEffect", { Intensity=1.1, Size=26, Threshold=0.78 })
+        fx("ColorCorrectionEffect", { Brightness=0.04, Contrast=0.15, Saturation=0.28,
+            TintColor=Color3.fromRGB(255,225,240) })
+    end
+    Presets.Nebula = function()
+        clearTagged()
+        Lighting.Brightness = 2.2; Lighting.ExposureCompensation = 0.4
+        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.9
+        Lighting.EnvironmentDiffuseScale = 0.55; Lighting.EnvironmentSpecularScale = 0.85
+        Lighting.ClockTime = 0; Lighting.OutdoorAmbient = Color3.fromRGB(128,94,168)
+        Lighting.Ambient = Color3.fromRGB(82,60,120)
+        fx("Atmosphere", { Density=0.34, Offset=0.25, Color=Color3.fromRGB(120,70,180),
+            Decay=Color3.fromRGB(220,90,190), Glare=1.4, Haze=1.1 })
+        fx("BloomEffect", { Intensity=1.15, Size=24, Threshold=0.72 })
+        fx("ColorCorrectionEffect", { Brightness=0.03, Contrast=0.2, Saturation=0.4,
+            TintColor=Color3.fromRGB(235,205,255) })
+    end
+    local PresetScalars = {
+        Neutral   = { Brightness=2,   ExposureCompensation=0,    ClockTime=14,   OutdoorAmbient=Color3.fromRGB(70,70,70),
+                      Ambient=Color3.fromRGB(0,0,0),      FogEnd=100000,
+                      EnvironmentDiffuseScale=0.5,  EnvironmentSpecularScale=0.5 },
+        Clarity   = { Brightness=2.6, ExposureCompensation=0,    ClockTime=14,   OutdoorAmbient=Color3.fromRGB(150,150,155),
+                      Ambient=Color3.fromRGB(120,120,125), FogEnd=1000000,
+                      EnvironmentDiffuseScale=0.2,  EnvironmentSpecularScale=0.1 },
+        Cyberpunk = { Brightness=2.6, ExposureCompensation=0.5,  ClockTime=0,    OutdoorAmbient=Color3.fromRGB(120,80,165),
+                      Ambient=Color3.fromRGB(80,55,120),
+                      EnvironmentDiffuseScale=0.7,  EnvironmentSpecularScale=1 },
+        Anime     = { Brightness=2.3, ExposureCompensation=0.2,  ClockTime=15,   OutdoorAmbient=Color3.fromRGB(150,140,170),
+                      Ambient=Color3.fromRGB(95,85,120),
+                      EnvironmentDiffuseScale=0.7,  EnvironmentSpecularScale=0.7 },
+        Sunset    = { Brightness=2.3, ExposureCompensation=0.4,  ClockTime=17.75, OutdoorAmbient=Color3.fromRGB(185,115,80),
+                      Ambient=Color3.fromRGB(105,60,45),
+                      EnvironmentDiffuseScale=0.75, EnvironmentSpecularScale=0.9 },
+        Vaporwave = { Brightness=2.3, ExposureCompensation=0.4,  ClockTime=18.4, OutdoorAmbient=Color3.fromRGB(150,90,165),
+                      Ambient=Color3.fromRGB(95,60,120),
+                      EnvironmentDiffuseScale=0.6,  EnvironmentSpecularScale=0.9 },
+        Toxic     = { Brightness=2.2, ExposureCompensation=0.35, ClockTime=1,    OutdoorAmbient=Color3.fromRGB(80,135,70),
+                      Ambient=Color3.fromRGB(45,85,50),
+                      EnvironmentDiffuseScale=0.6,  EnvironmentSpecularScale=0.8 },
+        Void      = { Brightness=2.0, ExposureCompensation=0.25, ClockTime=0,    OutdoorAmbient=Color3.fromRGB(85,95,135),
+                      Ambient=Color3.fromRGB(55,62,95),
+                      EnvironmentDiffuseScale=0.5,  EnvironmentSpecularScale=0.7 },
+        Sakura    = { Brightness=2.2, ExposureCompensation=0.35, ClockTime=15.5, OutdoorAmbient=Color3.fromRGB(200,155,180),
+                      Ambient=Color3.fromRGB(120,85,110),
+                      EnvironmentDiffuseScale=0.7,  EnvironmentSpecularScale=0.7 },
+        Nebula    = { Brightness=2.2, ExposureCompensation=0.4,  ClockTime=0,    OutdoorAmbient=Color3.fromRGB(128,94,168),
+                      Ambient=Color3.fromRGB(82,60,120),
+                      EnvironmentDiffuseScale=0.55, EnvironmentSpecularScale=0.85 },
+    }
+    local _WHITE = Color3.new(1, 1, 1)
+    local function applyFullbrightOverride()
+        if not Config.VisualsFullbright then return end
+        pcall(function() if Lighting.Ambient ~= _WHITE then Lighting.Ambient = _WHITE end end)
+        pcall(function() if Lighting.OutdoorAmbient ~= _WHITE then Lighting.OutdoorAmbient = _WHITE end end)
+        pcall(function() if Lighting.GlobalShadows ~= false then Lighting.GlobalShadows = false end end)
+        pcall(function() if Lighting.Brightness < 2 then Lighting.Brightness = 2 end end)
+    end
+    local function applyFogOverride()
+        if not Config.VisualsNoFog then return end
+        pcall(function() if Lighting.FogEnd ~= 1e6 then Lighting.FogEnd = 1e6 end end)
+        pcall(function() if Lighting.FogStart ~= 1e6 then Lighting.FogStart = 1e6 end end)
+        for _, c in ipairs(Lighting:GetChildren()) do
+            if c:IsA("Atmosphere") then
+                pcall(function() if c.Density ~= 0 then c.Density = 0 end end)
+            end
+        end
+    end
+    local function cfg(key, default)
+        local v = Config[key]
+        if v == nil then return default end
+        return v
+    end
+    local _GRADES = {
+        Crisp = { B = 0.03,  C = 0.20, S = 0.18,  tint = _WHITE },
+        Cold  = { B = -0.03, C = 0.28, S = -0.22, tint = Color3.fromRGB(196, 220, 255) },
+        Warm  = { B = 0.04,  C = 0.22, S = 0.15,  tint = Color3.fromRGB(255, 222, 180) },
+        Comp  = { B = -0.01, C = 0.40, S = 0.28,  tint = Color3.fromRGB(255, 248, 236) },
+    }
+    local _gradeFx = nil
+    local function getGradeFx()
+        if _gradeFx and _gradeFx.Parent then return _gradeFx end
+        local cc = Instance.new("ColorCorrectionEffect")
+        cc.Name = "_vs_grade"
+        cc:SetAttribute("VS_Grade", true)
+        cc.Parent = Lighting
+        _gradeFx = cc
+        return cc
+    end
+    local function reassertGrade()
+        local g = _GRADES[cfg("VisualsGrade", "None")]
+        if not g then
+            if _gradeFx and _gradeFx.Parent then
+                pcall(function() if _gradeFx.Enabled then _gradeFx.Enabled = false end end)
+            end
+            return
+        end
+        local s  = math.clamp(cfg("VisualsGradeStrength", 1), 0, 1)
+        local tB, tC, tS = g.B * s, g.C * s, g.S * s
+        local tT = g.tint:Lerp(_WHITE, 1 - s)
+        local cc = getGradeFx()
+        pcall(function()
+            if not cc.Enabled then cc.Enabled = true end
+            if math.abs(cc.Brightness - tB) > 0.001 then cc.Brightness = tB end
+            if math.abs(cc.Contrast   - tC) > 0.001 then cc.Contrast   = tC end
+            if math.abs(cc.Saturation - tS) > 0.001 then cc.Saturation = tS end
+            if cc.TintColor ~= tT then cc.TintColor = tT end
+        end)
+    end
+    local function clearGrade()
+        if _gradeFx then pcall(function() _gradeFx:Destroy() end); _gradeFx = nil end
+    end
+    local _bloomFx = nil
+    local function getBloomFx()
+        if _bloomFx and _bloomFx.Parent then return _bloomFx end
+        local b = Instance.new("BloomEffect")
+        b.Name = "_vs_bloom"; b:SetAttribute("VS_Bloom", true)
+        b.Size = 24; b.Threshold = 0.8; b.Intensity = 0
+        b.Parent = Lighting
+        _bloomFx = b
+        return b
+    end
+    local function reassertBloom()
+        if not cfg("VisualsBloom", false) then
+            if _bloomFx and _bloomFx.Parent then
+                pcall(function() if _bloomFx.Enabled then _bloomFx.Enabled = false end end)
+            end
+            return
+        end
+        local tI = math.clamp(cfg("VisualsBloomIntensity", 1), 0, 3)
+        local b = getBloomFx()
+        pcall(function()
+            if not b.Enabled then b.Enabled = true end
+            if math.abs(b.Intensity - tI) > 0.01 then b.Intensity = tI end
+        end)
+    end
+    local function clearBloom()
+        if _bloomFx then pcall(function() _bloomFx:Destroy() end); _bloomFx = nil end
+    end
+    local function reassertScalars()
+        local sc = PresetScalars[State.VisualsCurrentPreset or Config.VisualsPreset]
+        if sc then
+            for k, v in pairs(sc) do pcall(function() if Lighting[k] ~= v then Lighting[k] = v end end) end
+            pcall(function() if Lighting.GlobalShadows ~= false then Lighting.GlobalShadows = false end end)
+        end
+        applyFullbrightOverride()
+        applyFogOverride()
+        reassertGrade()
+        reassertBloom()
+    end
+    local function startReassert()
+        if _reassertConn then return end
+        _reassertConn = RunService.Heartbeat:Connect(function()
+            if not Config.Visuals or Config.VisualsPerformanceMode then return end
+            local now = tick()
+            if (now - _reassertLastT) < 1.0 then return end
+            _reassertLastT = now
+            reassertScalars()
+        end)
+    end
+    local function stopReassert()
+        if _reassertConn then _reassertConn:Disconnect(); _reassertConn = nil end
+    end
+    Visuals.PresetOrder = { "Neutral", "Clarity", "Cyberpunk", "Anime", "Sunset", "Vaporwave", "Toxic", "Void", "Sakura", "Nebula" }
+    local function applyPreset(name)
+        if not Config.Visuals or Config.VisualsPerformanceMode then return end
+        local fn = Presets[name]; if not fn then return end
+        pcall(fn); State.VisualsCurrentPreset = name; Config.VisualsPreset = name
+        reassertGrade()
+        reassertBloom()
+    end
+    local function getHoloFolder()
+        if _hologramFolder and _hologramFolder.Parent then return _hologramFolder end
+        local f = Instance.new("Folder"); f.Name = "_vs_holos"; f.Parent = Workspace
+        _hologramFolder = f; return f
+    end
+    local _GOLD = Color3.fromRGB(255, 200, 60)
+    local _EDGE    = Color3.fromRGB(155, 232, 255)
+    local _VISIBLE = Color3.fromRGB(41, 224, 255)
+    local function easeInOut(a) return a * a * (3 - 2 * a) end
+    local function fadePop(container, parts, hl, dur, tr0)
+        tr0 = tr0 or 0.55
+        local startT = tick()
+        local conn
+        conn = RunService.Heartbeat:Connect(function()
+            if not container.Parent then if conn then conn:Disconnect() end return end
+            local a  = math.clamp((tick() - startT) / dur, 0, 1)
+            local e  = easeInOut(a)
+            local tr = tr0 + (1 - tr0) * e
+            for _, b in ipairs(parts) do b.Transparency = tr end
+            if hl then hl.OutlineTransparency = e end
+            if a >= 1 and conn then conn:Disconnect() end
+        end)
+        Debris:AddItem(container, dur + 0.2)
+    end
+    local function createHologram(character, lethal)
+        if not character or not character.Parent then return end
+        local rp = character:FindFirstChild("HitboxHead")
+            or character:FindFirstChild("Head")
+            or character:FindFirstChild("HumanoidRootPart")
+            or character:FindFirstChild("UpperTorso")
+        if not rp then return end
+        if (rp.Position - Camera.CFrame.Position).Magnitude > Config.VisualsHologramRange then return end
+        if #getHoloFolder():GetChildren() >= 16 then return end
+        local dur = math.clamp(Config.VisualsHologramDuration or 3.5, 0.25, 10)
+        local lethalOn  = lethal and cfg("VisualsHologramLethal", true)
+        local mainColor = lethalOn and cfg("VisualsHologramLethalColor", _GOLD) or Config.VisualsHologramColor
+        local folder = getHoloFolder()
+        local function mkBall(size, transp, color)
+            local b = Instance.new("Part")
+            b.Shape = Enum.PartType.Ball
+            b.Size = Vector3.new(size, size, size)
+            b.Material = Enum.Material.Neon
+            b.Color = color
+            b.Transparency = transp
+            b.Anchored = true; b.CanCollide = false; b.CanQuery = false
+            b.CanTouch = false; b.CastShadow = false; b.Massless = true
+            b:SetAttribute("VS_Holo", true)
+            return b
+        end
+        local vis = math.clamp(cfg("VisualsHologramVisibility", 1.4), 0.2, 2)
+        local sc  = 0.75 + 0.25 * vis
+        local h0  = math.clamp(0.65 / vis, 0.1, 0.9)
+        local core = mkBall(0.7 * sc, 0.05, mainColor)
+        local halo = mkBall(1.7 * sc, h0, mainColor)
+        local startCF = CFrame.new(rp.Position)
+        core.CFrame = startCF; halo.CFrame = startCF
+        core.Name = "_h" .. math.random(10000, 99999); halo.Name = core.Name .. "_g"
+        core.Parent = folder; halo.Parent = folder
+        local startT = tick()
+        local conn
+        conn = RunService.Heartbeat:Connect(function()
+            if not core.Parent then if conn then conn:Disconnect() end return end
+            local alpha = math.clamp((tick() - startT) / dur, 0, 1)
+            local rise  = 2.5 * (1 - (1 - alpha) * (1 - alpha))
+            local cf    = startCF + Vector3.new(0, rise, 0)
+            core.CFrame = cf; halo.CFrame = cf
+            core.Transparency = math.clamp(0.05 + 0.95 * alpha, 0, 1)
+            halo.Transparency = math.clamp(h0 + (1 - h0) * alpha, 0, 1)
+            if alpha >= 1 and conn then conn:Disconnect() end
+        end)
+        Debris:AddItem(core, dur + 0.2)
+        Debris:AddItem(halo, dur + 0.2)
+    end
+    function Visuals.previewHologram(character)
+        createHologram(character, Config.VisualsHologramLethal)
+    end
+    function Visuals.onShotHit(character)
+        if not Config.VisualsHolograms or not character then return end
+        local now=tick()
+        if now-(_hologramCooldowns[character] or 0)<0.15 then return end
+        _hologramCooldowns[character]=now
+        local hum=character:FindFirstChildOfClass("Humanoid")
+        createHologram(character,hum and hum.Health<=0)
+    end
+    local _hpPrev = {}
+    function Visuals.notifyTarget(p, info)
+        if not p or p == lp or not p.Character then return end
+        local cur, maxHP = getHealth(p)
+        local dmg = math.max(0, (_hpPrev[p] or maxHP) - cur)
+        _hpPrev[p] = cur
+        local lethal = (not isAlive(p)) or cur <= 0
+        local char = p.Character
+        local rp = char:FindFirstChild("HitboxHead")
+            or char:FindFirstChild("Head")
+            or char:FindFirstChild("HumanoidRootPart")
+            or char:FindFirstChild("UpperTorso")
+        local hitPos = rp and rp.Position or nil
+        local crit = (info and info.crit) or (dmg >= cfg("FXCritDamage", 30))
+        if Config.VisualsHolograms then
+            local now = tick()
+            if (now - (_hologramCooldowns[p] or 0)) >= 0.35 then
+                _hologramCooldowns[p] = now
+                createHologram(char, lethal)
+            end
+        end
+        FX.onHit(p, dmg, crit, lethal, hitPos)
+    end
+    local _fovSaved = nil
+    local _tpRP = nil
+    local function bindStretch()
+        if _stretchBound then return end
+        _stretchBound = true
+        RunService:BindToRenderStep("VS_Stretch", Enum.RenderPriority.Last.Value+1, function()
+            if not running or not Camera then return end
+            local s = Config.VisualsStretch or 1.0
+            local doStretch = math.abs(s - 1.0) >= 0.001
+            local doSway = Config.VisualsCameraSway
+            local doAspect = Config.CameraAspectRatioEnabled
+            local doThird  = Config.ThirdPersonEnabled
+            local doExtra = Config.ExtraRatioEnabled
+            if Config.CameraFovOverride then
+                local want = math.clamp(Config.CameraFovAmount or 90, 40, 130)
+                if _fovSaved == nil then _fovSaved = Camera.FieldOfView end
+                if Camera.FieldOfView ~= want then Camera.FieldOfView = want end
+            elseif _fovSaved ~= nil then
+                Camera.FieldOfView = _fovSaved; _fovSaved = nil
+            end
+            if not (doStretch or doSway or doAspect or doThird or doExtra) then return end
+            local c = Camera.CFrame
+            if doSway then
+                local amt = math.clamp(Config.VisualsCameraSwayAmount or 0.5, 0, 1)
+                local t = tick()
+                local roll  = (math.sin(t * 0.9) + math.sin(t * 0.37) * 0.6) * amt
+                local pitch =  math.sin(t * 1.3) * 0.7 * amt
+                local yaw   =  math.sin(t * 0.7) * 0.8 * amt
+                c = c * CFrame.Angles(math.rad(pitch), math.rad(yaw), math.rad(roll))
+            end
+            if doStretch then
+                c = CFrame.fromMatrix(c.Position, c.RightVector * s, c.UpVector)
+            end
+            if doAspect then
+                local rx = math.clamp(Config.CameraAspectRatioX or 4, 1, 21)
+                local ry = math.clamp(Config.CameraAspectRatioY or 3, 1, 21)
+                c = CFrame.fromMatrix(c.Position, c.RightVector * ((rx / ry) / math.max(Camera.ViewportSize.X / math.max(Camera.ViewportSize.Y, 1), 0.01)), c.UpVector)
+            end
+            if doExtra then
+                local w=math.clamp(Config.ExtraRatioWidth or 100,10,150)/100
+                local h=math.clamp(Config.ExtraRatioHeight or 100,10,150)/100
+                c=CFrame.fromMatrix(c.Position,c.RightVector,c.UpVector*h,-c.LookVector*(w/h))
+            end
+            if doThird and lp.Character then
+                local dist = math.clamp(Config.ThirdPersonDistance or 12, 4, 30)
+                local desiredPos = c.Position - c.LookVector * dist
+                if _tpRP == nil then
+                    _tpRP = RaycastParams.new()
+                    _tpRP.FilterType = Enum.RaycastFilterType.Exclude
+                end
+                _tpRP.FilterDescendantsInstances = { lp.Character }
+                local hit = Workspace:Raycast(c.Position, -c.LookVector * dist, _tpRP)
+                if hit then desiredPos = hit.Position + c.LookVector * 0.5 end
+                c = (c - c.Position) + desiredPos
+            end
+            Camera.CFrame = c
+        end)
+    end
+    local function startRainbow()
+        if _rainbowConn then return end
+        _rainbowBatchIdx = 1; table.clear(_rainbowParts)
+        local charSet = {}
+        for _, pl in ipairs(Players:GetPlayers()) do
+            if pl.Character then charSet[pl.Character] = true end
+        end
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d:IsA("BasePart") and not d:GetAttribute("VS_Holo")
+                and not charSet[d.Parent]
+                and d.Name ~= "Terrain" then
+                table.insert(_rainbowParts, { part = d, originalColor = d.Color })
+            end
+        end
+        _rainbowConn = RunService.Heartbeat:Connect(function(dt)
+            if not Config.Visuals or not Config.VisualsRainbowMap then return end
+            _rainbowHue = (_rainbowHue + dt * Config.VisualsRainbowMapSpeed) % 1
+            local total = #_rainbowParts; if total == 0 then return end
+            local batch = math.min(250, total)
+            for i = 1, batch do
+                local idx = ((_rainbowBatchIdx - 1 + i - 1) % total) + 1
+                local e   = _rainbowParts[idx]
+                if e and e.part and e.part.Parent then
+                    e.part.Color = Color3.fromHSV((_rainbowHue + (idx / total) * 0.3) % 1, 0.85, 1)
+                end
+            end
+            _rainbowBatchIdx = ((_rainbowBatchIdx + batch - 1) % total) + 1
+        end)
+    end
+    local function stopRainbow()
+        if _rainbowConn then _rainbowConn:Disconnect(); _rainbowConn = nil end
+        for _, e in ipairs(_rainbowParts) do
+            if e.part and e.part.Parent then pcall(function() e.part.Color = e.originalColor end) end
+        end
+        table.clear(_rainbowParts)
+    end
+    function Visuals.toggleRainbowMap(on)
+        Config.VisualsRainbowMap = on
+        if on and Config.Visuals then startRainbow() else stopRainbow() end
+    end
+    function Visuals.setStretch(v)
+        Config.VisualsStretch = math.clamp(v, Config.VisualsStretchMin, Config.VisualsStretchMax)
+    end
+    function Visuals.togglePerf(on)
+        Config.VisualsPerformanceMode = on
+        if on then
+            clearTagged(); clearGrade(); clearBloom()
+            Lighting.GlobalShadows = false; Lighting.EnvironmentDiffuseScale = 0
+            Lighting.EnvironmentSpecularScale = 0; Lighting.Brightness = 2
+        else
+            applyPreset(State.VisualsCurrentPreset or Config.VisualsPreset or 'Neutral')
+        end
+    end
+    function Visuals.setPreset(name) if Presets[name] then Config.VisualsPreset = name; applyPreset(name) end end
+    function Visuals.toggleHolograms(on) Config.VisualsHolograms = on end
+    function Visuals.setHologramStyle(name) Config.VisualsHologramStyle = name end
+    Visuals.HologramStyleOrder = { "Orb", "Skeleton", "Wraith" }
+    Visuals.GradeOrder = { "None", "Crisp", "Cold", "Warm", "Comp" }
+    function Visuals.setGrade(name)
+        Config.VisualsGrade = name
+        if not Config.Visuals or Config.VisualsPerformanceMode then return end
+        reassertGrade()
+    end
+    function Visuals.setGradeStrength(v)
+        Config.VisualsGradeStrength = math.clamp(v, 0, 1)
+        if not Config.Visuals or Config.VisualsPerformanceMode then return end
+        reassertGrade()
+    end
+    function Visuals.setBloom(on)
+        Config.VisualsBloom = on
+        if not Config.Visuals or Config.VisualsPerformanceMode then return end
+        reassertBloom()
+    end
+    function Visuals.setBloomIntensity(v)
+        Config.VisualsBloomIntensity = math.clamp(v, 0, 3)
+        if not Config.Visuals or Config.VisualsPerformanceMode then return end
+        reassertBloom()
+    end
+    function Visuals.toggleFullbright(on)
+        Config.VisualsFullbright = on
+        if not Config.Visuals or Config.VisualsPerformanceMode then return end
+        if on then applyFullbrightOverride()
+        else applyPreset(State.VisualsCurrentPreset or Config.VisualsPreset or "Neutral") end
+    end
+    function Visuals.toggleNoFog(on)
+        Config.VisualsNoFog = on
+        if not Config.Visuals or Config.VisualsPerformanceMode then return end
+        if on then applyFogOverride()
+        else applyPreset(State.VisualsCurrentPreset or Config.VisualsPreset or "Neutral") end
+    end
+    function Visuals.enable()
+        Config.Visuals = true; applyPreset(Config.VisualsPreset or "Neutral")
+        if not Config.VisualsPerformanceMode then
+            applyFullbrightOverride(); applyFogOverride()
+        end
+        bindStretch()
+        if Config.VisualsRainbowMap then startRainbow() end
+        if Config.VisualsPerformanceMode then Visuals.togglePerf(true) end
+        startReassert()
+    end
+    function Visuals.disable()
+        Config.Visuals = false; stopRainbow(); stopReassert()
+        clearGrade(); clearBloom()
+        restore()
+        if _fovSaved ~= nil then
+            pcall(function() Camera.FieldOfView = _fovSaved end)
+            _fovSaved = nil
+        end
+    end
+    function Visuals.unload()
+        Visuals.disable(); stopReassert()
+        if _fovSaved ~= nil then
+            pcall(function() Camera.FieldOfView = _fovSaved end)
+            _fovSaved = nil
+        end
+        if _hologramFolder then pcall(function() _hologramFolder:Destroy() end); _hologramFolder = nil end
+        if _stretchBound then
+            pcall(function() RunService:UnbindFromRenderStep("VS_Stretch") end)
+            _stretchBound = false
+        end
+    end
+    function Visuals.init()
+        snapshotLighting()
+        bindStretch()
+    end
+end)()
+
+-- CHUNK 2 ENDS HERE. Chunk 3 adds:
+--   Weather engine + GameVisuals core + all the UI tabs
