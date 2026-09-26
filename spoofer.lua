@@ -1,102 +1,22 @@
--- language: Lua (Roblox Luau), file: Spoofer.lua
--- executor: Delta Android (also PC — request or game:HttpGet)
--- standalone Linoria build of the prism beta v1 suite.
--- feature logic preserved; UI layer is Linoria.
+-- language: Lua (Roblox Luau), file: spoofer.lua
+-- chunk 1/4 — head, Config, screenDraw, Visuals engine start
+-- reconstructed from thread; interior sections marked RECONSTRUCTED where source was lost
 
--- ============================================================
--- PRE-FLIGHT
--- ============================================================
-pcall(function()
-    if SpooferConn then SpooferConn:Disconnect() end
-    if BurgadaSpooferUnload then pcall(BurgadaSpooferUnload) end
-end)
-pcall(function()
-    local cg = game:GetService('CoreGui')
-    for _, name in ipairs({ 'LinoriaLib', '_vs_fx', '_vs_cam', '_vs_grade' }) do
-        local g = cg:FindFirstChild(name)
-        if g then g:Destroy() end
-    end
-end)
-
--- ============================================================
--- LIBRARY BOOT
--- ============================================================
-local repo = 'https://raw.githubusercontent.com/mstudio45/LinoriaLib/main/'
-local urls = {
-    'https://raw.githubusercontent.com/mstudio45/LinoriaLib/main/Library.lua',
-    'https://raw.githubusercontent.com/mstudio45/LinoriaLib/refs/heads/main/Library.lua',
-    'https://cdn.jsdelivr.net/gh/mstudio45/LinoriaLib@main/Library.lua',
-}
-
-local function tryFetch(url)
-    if syn and syn.request then
-        local ok, r = pcall(syn.request, { Url = url, Method = 'GET' })
-        if ok and r and r.Body and #r.Body > 0 then return r.Body end
-    end
-    if http_request then
-        local ok, r = pcall(http_request, { Url = url, Method = 'GET' })
-        if ok and r and r.Body and #r.Body > 0 then return r.Body end
-    end
-    if request then
-        local ok, r = pcall(request, { Url = url, Method = 'GET' })
-        if ok and r and r.Body and #r.Body > 0 then return r.Body end
-    end
-    local ok, body = pcall(function() return game:HttpGet(url) end)
-    if ok and body and #body > 0 then return body end
-    return nil
-end
-
-local libSrc
-for _, u in ipairs(urls) do
-    warn('[Burgada] trying', u)
-    libSrc = tryFetch(u)
-    if libSrc then
-        warn('[Burgada] success from', u, '#', #libSrc)
-        break
-    end
-    warn('[Burgada] failed:', u)
-end
-
-if not libSrc then warn('[Burgada] ALL URLS FAILED'); return end
-local Library = loadstring(libSrc)()
-if not Library then warn('[Burgada] Library nil'); return end
-
-local function fetchAddon(name)
-    for _, base in ipairs({
-        'https://raw.githubusercontent.com/mstudio45/LinoriaLib/main/addons/' .. name,
-        'https://raw.githubusercontent.com/mstudio45/LinoriaLib/refs/heads/main/addons/' .. name,
-        'https://cdn.jsdelivr.net/gh/mstudio45/LinoriaLib@main/addons/' .. name,
-    }) do
-        local s = tryFetch(base)
-        if s then
-            local ok, mod = pcall(function() return loadstring(s)() end)
-            if ok and mod then return mod end
-        end
-    end
-    return nil
-end
-
-local ThemeManager = fetchAddon('ThemeManager.lua')
-local SaveManager  = fetchAddon('SaveManager.lua')
-
-Library.ShowToggleFrameInKeybinds = true
-Library.ShowCustomCursor          = false
-Library.NotifySide                = 'Left'
-
--- ============================================================
--- SERVICES
--- ============================================================
-local Players    = game:GetService('Players')
-local RunService = game:GetService('RunService')
-local UIS        = game:GetService('UserInputService')
-local ReplicatedStorage = game:GetService('ReplicatedStorage')
-local Lighting   = game:GetService('Lighting')
-local Debris     = game:GetService('Debris')
-local TweenService = game:GetService('TweenService')
-local SoundService = game:GetService('SoundService')
-local LP         = Players.LocalPlayer
-local Camera     = workspace.CurrentCamera
-
+if not game:IsLoaded() then game.Loaded:Wait() end
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
+local Lighting = game:GetService("Lighting")
+local Debris = game:GetService("Debris")
+local TweenService = game:GetService("TweenService")
+local Workspace = workspace
+local Camera = workspace.CurrentCamera
+local lp = Players.LocalPlayer
+local cloneref = cloneref or function(x) return x end
+local env = (getgenv and getgenv()) or _G
+if env.__ObsidianLocalVisuals then pcall(env.__ObsidianLocalVisuals) end
 local connections, restorers = {}, {}
 local running = true
 local function connect(signal, fn)
@@ -104,41 +24,36 @@ local function connect(signal, fn)
     table.insert(connections, c)
     return c
 end
-
-connect(workspace:GetPropertyChangedSignal('CurrentCamera'), function()
+connect(workspace:GetPropertyChangedSignal("CurrentCamera"), function()
     Camera = workspace.CurrentCamera
 end)
-
-local env = (getgenv and getgenv()) or _G
-if env.__BurgadaSpoofer then pcall(env.__BurgadaSpoofer) end
-
--- ============================================================
--- WINDOW
--- ============================================================
-local Window = Library:CreateWindow({
-    Title     = 'Burgada Lua | Spoofer v1',
-    Center    = true,
-    AutoShow  = true,
-    Resizable = true,
-    NotifySide = 'Left',
-})
-
-local Tabs = {
-    Cosmetics  = Window:AddTab('Cosmetics'),
-    Weapons    = Window:AddTab('Weapons'),
-    Inventory  = Window:AddTab('Inventory'),
-    World      = Window:AddTab('World'),
-    Spoofer    = Window:AddTab('Spoofer'),
-    Misc       = Window:AddTab('Misc'),
-    ['UI Settings'] = Window:AddTab('UI Settings'),
-}
-
-local function notify(msg)
-    pcall(function() Library:Notify(tostring(msg), 5) end)
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local okLibrary, Library = pcall(function()
+    return loadstring(game:HttpGet(repo .. "Library.lua"))()
+end)
+if not okLibrary or not Library then
+    warn("Obsidian could not load: " .. tostring(Library))
+    return
 end
-
+local Window = Library:CreateWindow({
+    Title = "prism beta v1",
+    Center = true, AutoShow = true,
+    ToggleKeybind = Enum.KeyCode.RightShift,
+})
+local Options, Toggles = Library.Options or {}, Library.Toggles or {}
+local Tabs = {
+    Cosmetics = Window:AddTab("Cosmetics", "sparkles"),
+    Weapons = Window:AddTab("Weapons", "swords"),
+    Inventory = Window:AddTab("Inventory", "box"),
+    World = Window:AddTab("World", "globe"),
+    Spoofer = Window:AddTab("Spoofer", "user-round"),
+    Misc = Window:AddTab("Misc", "layers"),
+    Settings = Window:AddTab("Settings", "settings"),
+}
+local function notify(message)
+    Library:Notify(tostring(message), 5)
+end
 local function patch(target, name, replacement)
-    if target == nil then return false end
     local old = target[name]
     target[name] = replacement
     table.insert(restorers, function()
@@ -146,24 +61,29 @@ local function patch(target, name, replacement)
     end)
     return old
 end
-
--- ============================================================
--- RIVALS MODULE RESOLUTION
--- ============================================================
+local function moduleAt(root, names)
+    for _, name in ipairs(names) do
+        root = root and root:FindFirstChild(name)
+        if not root then return nil end
+    end
+    if not root:IsA("ModuleScript") then return nil end
+    local ok, value = pcall(require, root)
+    if ok and type(value) == "table" then return value end
+    return nil
+end
 local moduleErrors = {}
-local moduleCache = setmetatable({}, {__mode='k'})
-
+local moduleCache = setmetatable({}, {__mode="k"})
 local function loadGameModule(root, names)
-    local path = table.concat(names, '.')
+    local path = table.concat(names, ".")
     local node = root
     for _, name in ipairs(names) do
         node = node and node:FindFirstChild(name)
-        if not node then moduleErrors[path] = 'not loaded yet'; return nil end
+        if not node then moduleErrors[path] = "not loaded yet"; return nil end
     end
-    if not node:IsA('ModuleScript') then moduleErrors[path] = 'not a ModuleScript'; return nil end
+    if not node:IsA("ModuleScript") then moduleErrors[path] = "not a ModuleScript"; return nil end
     if moduleCache[node] then return moduleCache[node] end
     local ok, value = pcall(require, node)
-    if ok and type(value) == 'table' then
+    if ok and type(value) == "table" then
         moduleCache[node] = value
         moduleErrors[path] = nil
         return value
@@ -171,41 +91,46 @@ local function loadGameModule(root, names)
     moduleErrors[path] = tostring(value)
     return nil
 end
-
-local Rivals = {Ready = false}
+local Rivals = {Ready=false}
 local function resolveRivals()
-    local scripts = LP:FindFirstChild('PlayerScripts')
-    Rivals.Fighter = Rivals.Fighter or loadGameModule(scripts, {'Controllers','FighterController'})
-    Rivals.Enums = Rivals.Enums or loadGameModule(ReplicatedStorage, {'Modules','EnumLibrary'})
-    Rivals.Cosmetics = Rivals.Cosmetics or loadGameModule(ReplicatedStorage, {'Modules','CosmeticLibrary'})
-    Rivals.ItemLib = Rivals.ItemLib or loadGameModule(ReplicatedStorage, {'Modules','ItemLibrary'})
-    Rivals.SeasonLibrary = Rivals.SeasonLibrary or loadGameModule(ReplicatedStorage, {'Modules','SeasonLibrary'})
-    Rivals.PlayerDataController = Rivals.PlayerDataController or loadGameModule(scripts, {'Controllers','PlayerDataController'})
-    Rivals.Gun = Rivals.Gun or loadGameModule(scripts, {'Modules','ItemTypes','Gun'})
+    local scripts = lp:FindFirstChild("PlayerScripts")
+    Rivals.Fighter = Rivals.Fighter or loadGameModule(scripts, {"Controllers","FighterController"})
+    Rivals.Enums = Rivals.Enums or loadGameModule(ReplicatedStorage, {"Modules","EnumLibrary"})
+    Rivals.Cosmetics = Rivals.Cosmetics or loadGameModule(ReplicatedStorage, {"Modules","CosmeticLibrary"})
+    Rivals.ItemLib = Rivals.ItemLib or loadGameModule(ReplicatedStorage, {"Modules","ItemLibrary"})
+    Rivals.SeasonLibrary = Rivals.SeasonLibrary or loadGameModule(ReplicatedStorage, {"Modules","SeasonLibrary"})
+    Rivals.PlayerDataController = Rivals.PlayerDataController or loadGameModule(scripts, {"Controllers","PlayerDataController"})
+    Rivals.Gun = Rivals.Gun or loadGameModule(scripts, {"Modules","ItemTypes","Gun"})
     Rivals.Ready = Rivals.Fighter ~= nil
 end
-
 local function getEquippedItem()
     local ctrl = Rivals.Fighter
     if not ctrl then return nil end
     local fighter = ctrl.LocalFighter
-    if not fighter and type(ctrl.GetFighter) == 'function' then
-        local ok, value = pcall(ctrl.GetFighter, ctrl, LP)
+    if not fighter and type(ctrl.GetFighter) == "function" then
+        local ok, value = pcall(ctrl.GetFighter, ctrl, lp)
         if ok then fighter = value end
     end
-    if not fighter and ctrl._player_to_fighter then fighter = ctrl._player_to_fighter[LP] end
+    if not fighter and ctrl._player_to_fighter then fighter=ctrl._player_to_fighter[lp] end
     return fighter and fighter.EquippedItem
 end
 
 local function getHealth(player)
-    local hum = player.Character and player.Character:FindFirstChildOfClass('Humanoid')
+    local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
     return hum and hum.Health or 0, hum and hum.MaxHealth or 100
 end
-
--- ============================================================
--- STATE
--- ============================================================
-local State = { Shots = 0, Hits = 0 }
+local function isAlive(player)
+    local health = getHealth(player)
+    return health > 0
+end
+local function hpRamp(f)
+    return Color3.fromRGB(255,68,54):Lerp(Color3.fromRGB(61,224,122), math.clamp(f or 0,0,1))
+end
+local function getWeaponName(player)
+    local tool = player.Character and player.Character:FindFirstChildOfClass("Tool")
+    return tool and tool.Name or "?"
+end
+local State = { Shots = 0, Hits = 0, ESPObjects = {} }
 
 local Config = {
     GameVisuals=false, GVUnlockAll=false, GVUnlockWeapons=false,
@@ -213,1635 +138,342 @@ local Config = {
     GVFinisherClone=true, GVRemember=true, GVRankCharmOn=false,
     GVRankCharmRank="", GVRankCharmLb=0, GVEmotes=false,
     Visuals = false, VisualsPreset = "Neutral", VisualsPerformanceMode = false,
-    VisualsFullbright = false, VisualsNoFog = false, VisualsHolograms = false,
-    VisualsRainbowMap = false, VisualsRainbowMapSpeed = 0.15, VisualsStretch = 1.0,
+    VisualsFullbright = false,
+    VisualsNoFog = false,
+    VisualsHolograms = false, VisualsRainbowMap = false,
+    VisualsRainbowMapSpeed = 0.15, VisualsStretch = 1.0,
     VisualsStretchMin = 0.5, VisualsStretchMax = 1.2,
-    VisualsCameraSway = false, VisualsCameraSwayAmount = 0.5,
-    VisualsHologramDuration = 3.5, VisualsHologramRange = 300, VisualsHologramVisibility = 1.4,
-    VisualsHologramColor = Color3.fromRGB(0, 220, 255), VisualsHologramAccent = Color3.fromRGB(255, 60, 200),
-    VisualsGrade = "Crisp", VisualsGradeStrength = 0.6,
-    VisualsBloom = false, VisualsBloomIntensity = 1.0,
-    VisualsVignette = false, VisualsVignetteStrength = 0.6,
-    VisualsLetterbox = false, VisualsLetterboxSize = 0.10,
-    VisualsDOF = false, VisualsDOFDistance = 28, VisualsDOFBlur = 0.5,
-    VisualsHologramStyle = "Orb", VisualsHologramLethal = true,
+    VisualsCameraSway = false,
+    VisualsCameraSwayAmount = 0.5,
+    VisualsHologramDuration = 3.5, VisualsHologramRange = 300,
+    VisualsHologramVisibility = 1.4,
+    VisualsHologramColor  = Color3.fromRGB(0, 220, 255),
+    VisualsHologramAccent = Color3.fromRGB(255, 60, 200),
+    VisualsGrade = "Crisp",
+    VisualsGradeStrength = 0.6,
+    VisualsBloom = false,
+    VisualsBloomIntensity = 1.0,
+    VisualsVignette = false,
+    VisualsVignetteStrength = 0.6,
+    VisualsLetterbox = false,
+    VisualsLetterboxSize = 0.10,
+    VisualsDOF = false,
+    VisualsDOFDistance = 28,
+    VisualsDOFBlur = 0.5,
+    VisualsHologramStyle = "Orb",
+    VisualsHologramLethal = true,
     VisualsHologramLethalColor = Color3.fromRGB(255, 200, 60),
     HUD = false,
-    FXHitMarker = true, FXHitMarkerColor = Color3.fromRGB(255,255,255),
-    FXHitMarkerCritColor = Color3.fromRGB(255,194,75), FXHitMarkerLethalColor = Color3.fromRGB(255,64,78),
-    FXHitMarkerGap = 5, FXHitMarkerLen = 8, FXHitMarkerThickness = 2,
-    FXHitSound = true, FXHitSoundId = "", FXKillSoundId = "", FXHitSoundVolume = 0.5,
-    FXDamageNumbers = true, FXDamageAccumWindow = 0.9,
-    FXKillBanner = true, FXKillBannerColor = Color3.fromRGB(255,194,75),
-    FXKillFeed = true, FXHeadshotSpark = true, FXHitFlash = true, FXDamageDirection = true,
-    FXLowHPVignette = true, FXLowHPThreshold = 0.35, FXCritDamage = 30,
-    FXBeamTracer = false, FXBeamStyle = "Glow",
-    FXBeamHitColor = Color3.fromRGB(255,194,75), FXBeamMissColor = Color3.fromRGB(143,160,176),
-    FXFovRing = false, FXFovColorA = Color3.fromRGB(53,215,199), FXFovColorB = Color3.fromRGB(255,194,75),
-    FXFovThickness = 1.5, FXFovDriftSpeed = 0.15, FXFovFill = false, FXFovRotate = true,
-    FXWorldSpark = false,
-    FXBeamWidth0 = 0.18, FXBeamWidth1 = 0.04, FXBeamDur = 0.55,
-    FXBeamGlowLight = true, FXBeamTravel = true, FXBeamTravelSpeed = 1400,
-    FXBeamImpact = true, FXWorldSparkBloom = true,
-    FXKillPillar = false, FXKillPillarColor = Color3.fromRGB(255,194,75),
-    FXKillShards = false, FXKillShardsColor = Color3.fromRGB(155,232,255),
-    FXKillPulse = false, FXKillPulseAmount = 0.6,
-    FXFovCasing = true,
-    FXCrosshair = false, FXCrosshairStyle = "Cross",
-    FXCrosshairColor = Color3.fromRGB(243,246,250), FXCrosshairDot = true,
-    FXCrosshairGap = 4, FXCrosshairLen = 7, FXCrosshairThickness = 2,
-    FXCrosshairOutline = true, FXCrosshairHitPop = true,
-    HUDWatermark = true, HUDWatermarkStats = true,
-    FXTargetInfo = false, FXTargetInfoOffset = 110,
-    HUDBindList = false, HUDBindListSide = "Left",
-    FXHitMarkerStyle = "X", FXCrosshairBloom = false,
-    HUDCompass = false, HUDCompassWidth = 380, HUDCompassPips = true,
-    HUDThreatArc = false, HUDRangeReadout = false,
-    Weather = false, WeatherType = "Rain", WeatherIntensity = 1.0,
-    WeatherMeteors = false, WeatherMeteorRate = 1.0, WeatherStarRate = 1.0,
-    WeatherClockDial = false, WeatherClockCycleMin = 8,
-    WeatherStorm = false, WeatherStormFlash = true,
-    WeatherStormMin = 4, WeatherStormVar = 8,
+    FXHitMarker = true,
+    FXHitMarkerColor = Color3.fromRGB(255, 255, 255),
+    FXHitMarkerCritColor = Color3.fromRGB(255, 194, 75),
+    FXHitMarkerLethalColor = Color3.fromRGB(255, 64, 78),
+    FXHitMarkerGap = 5,
+    FXHitMarkerLen = 8,
+    FXHitMarkerThickness = 2,
+    FXHitSound = true,
+    FXHitSoundId = "",
+    FXKillSoundId = "",
+    FXHitSoundVolume = 0.5,
+    FXDamageNumbers = true,
+    FXDamageAccumWindow = 0.9,
+    FXKillBanner = true,
+    FXKillBannerColor = Color3.fromRGB(255, 194, 75),
+    FXKillFeed = true,
+    FXHeadshotSpark = true,
+    FXHitFlash = true,
+    FXDamageDirection = true,
+    FXLowHPVignette = true,
+    FXLowHPThreshold = 0.35,
+    FXCritDamage = 30,
+    FXBeamTracer     = false,
+    FXBeamStyle      = "Glow",
+    FXBeamHitColor   = Color3.fromRGB(255, 194, 75),
+    FXBeamMissColor  = Color3.fromRGB(143, 160, 176),
+    FXFovRing        = false,
+    FXFovColorA      = Color3.fromRGB(53, 215, 199),
+    FXFovColorB      = Color3.fromRGB(255, 194, 75),
+    FXFovThickness   = 1.5,
+    FXFovDriftSpeed  = 0.15,
+    FXFovFill        = false,
+    FXFovRotate      = true,
+    FXWorldSpark     = false,
+    FXBeamWidth0    = 0.18,
+    FXBeamWidth1    = 0.04,
+    FXBeamDur       = 0.55,
+    FXBeamGlowLight = true,
+    FXBeamTravel      = true,
+    FXBeamTravelSpeed = 1400,
+    FXBeamImpact      = true,
+    FXWorldSparkBloom = true,
+    FXKillPillar      = false,
+    FXKillPillarColor = Color3.fromRGB(255, 194, 75),
+    FXKillShards      = false,
+    FXKillShardsColor = Color3.fromRGB(155, 232, 255),
+    FXKillPulse       = false,
+    FXKillPulseAmount = 0.6,
+    FXFovCasing     = true,
+    FXCrosshair          = false,
+    FXCrosshairStyle     = "Cross",
+    FXCrosshairColor     = Color3.fromRGB(243, 246, 250),
+    FXCrosshairDot       = true,
+    FXCrosshairGap       = 4,
+    FXCrosshairLen       = 7,
+    FXCrosshairThickness = 2,
+    FXCrosshairOutline   = true,
+    FXCrosshairHitPop    = true,
+    HUDWatermark      = true,
+    HUDWatermarkStats = true,
+    FXTargetInfo       = false,
+    FXTargetInfoOffset = 110,
+    HUDBindList     = false,
+    HUDBindListSide = "Left",
+    FXHitMarkerStyle = "X",
+    FXCrosshairBloom = false,
+    HUDCompass       = false,
+    HUDCompassWidth  = 380,
+    HUDCompassPips   = true,
+    HUDThreatArc     = false,
+    HUDRangeReadout  = false,
+    Weather          = false,
+    WeatherType      = "Rain",
+    WeatherIntensity = 1.0,
+    WeatherMeteors   = false,
+    WeatherMeteorRate = 1.0,
+    WeatherStarRate  = 1.0,
+    WeatherClockDial = false,
+    WeatherClockCycleMin = 8,
+    WeatherStorm     = false,
+    WeatherStormFlash= true,
+    WeatherStormMin  = 4,
+    WeatherStormVar  = 8,
     WeatherThunderId = "rbxassetid://9113169432",
-    WeatherSoundIds = {
+    WeatherSoundIds  = {
         rain  = "rbxassetid://9112858162",
         wind  = "rbxassetid://9112854440",
         fire  = "rbxassetid://2787093357",
         night = "rbxassetid://9112764573",
         birds = "rbxassetid://9112749254",
     },
-    WeatherSoundVolume = 0.35, WeatherMood = true,
-    SkyboxPreset = "Off", SkyboxHideCelestial = false,
-    WeatherGodRays = false, WeatherRainbow = false, WeatherShootingStars = false,
-    WeatherPuddles = false,
-    SpooferNameEnabled = false, SpooferName = "ProPlayer", SpooferDisplayName = "ProPlayer",
-    SpooferLevelEnabled = false, SpooferLevel = 100,
-    SpooferCasualWinsEnabled = false, SpooferCasualWins = 500,
-    SpooferRankedWinsEnabled = false, SpooferRankedWins = 250,
-    SpooferRankedEloEnabled = false, SpooferRankedElo = 2400,
-    SpooferWinPercentEnabled = false, SpooferWinPercent = 75,
-    SpooferWinStreakEnabled = false, SpooferWinStreak = 25,
-    SpooferFavoriteMapEnabled = false, SpooferFavoriteMap = "Arena",
-    VMOffsetEnabled = false, VMOffsetX = 0, VMOffsetY = 0, VMOffsetZ = 0,
-    VMOffsetPitch = 0, VMOffsetYaw = 0, VMOffsetRoll = 0,
-    VMChamsEnabled = false, VMChamsMaterial = "ForceField",
-    VMChamsColor = Color3.fromRGB(53,215,199), VMChamsTransparency = 0.5,
-    VMDisableTextures = false,
-    CameraAspectRatioEnabled = false, CameraAspectRatioX = 4, CameraAspectRatioY = 3,
-    CameraFovOverride = false, CameraFovAmount = 90,
-    ThirdPersonEnabled = false, ThirdPersonDistance = 12,
-    ExtraRatioEnabled = false, ExtraRatioWidth = 100, ExtraRatioHeight = 100,
-    ExtraSkyStars = 3000, ExtraSkySun = 20, ExtraSkyMoon = 11,
-    ExtraSkyRotate = false, ExtraSkySpeed = 10,
+    WeatherSoundVolume = 0.35,
+    WeatherMood      = true,
+    SkyboxPreset        = "Off",
+    SkyboxHideCelestial = false,
+    WeatherGodRays      = false,
+    WeatherRainbow      = false,
+    WeatherShootingStars = false,
+    WeatherPuddles   = false,
+    SpooferNameEnabled        = false,
+    SpooferName               = "ProPlayer",
+    SpooferDisplayName        = "ProPlayer",
+    SpooferLevelEnabled       = false,
+    SpooferLevel              = 100,
+    SpooferCasualWinsEnabled  = false,
+    SpooferCasualWins         = 500,
+    SpooferRankedWinsEnabled  = false,
+    SpooferRankedWins         = 250,
+    SpooferRankedEloEnabled   = false,
+    SpooferRankedElo          = 2400,
+    SpooferWinPercentEnabled  = false,
+    SpooferWinPercent         = 75,
+    SpooferWinStreakEnabled   = false,
+    SpooferWinStreak          = 25,
+    SpooferFavoriteMapEnabled = false,
+    SpooferFavoriteMap        = "Arena",
+    VMOffsetEnabled      = false,
+    VMOffsetX            = 0,
+    VMOffsetY            = 0,
+    VMOffsetZ            = 0,
+    VMOffsetPitch        = 0,
+    VMOffsetYaw          = 0,
+    VMOffsetRoll         = 0,
+    VMChamsEnabled       = false,
+    VMChamsMaterial      = "ForceField",
+    VMChamsColor         = Color3.fromRGB(53, 215, 199),
+    VMChamsTransparency  = 0.5,
+    VMDisableTextures    = false,
+    FXCrosshairAngle     = 0,
+    FXCrosshairSpin      = false,
+    FXCrosshairSpinSpeed = 1.0,
+    FXCrosshairSniper    = false,
+    FXCrosshairBounce    = false,
+    FXCrosshairBounceAmt = 4,
+    CameraAspectRatioEnabled = false,
+    CameraAspectRatioX       = 4,
+    CameraAspectRatioY       = 3,
+    CameraFovOverride        = false,
+    CameraFovAmount          = 90,
+    ThirdPersonEnabled       = false,
+    ThirdPersonDistance      = 12,
 }
 
--- ============================================================
--- ============ VISUALS ENGINE (Lighting, Holograms, FX) ============
--- ============================================================
-local Visuals = {}
-local FX = {}
-
-;(function()
-    local _origLighting, _origClones = nil, {}
-    local _hologramFolder, _hologramCooldowns = nil, {}
-    local _stretchBound, _rainbowConn = false, nil
-    local _rainbowParts, _rainbowHue, _rainbowBatchIdx = {}, 0, 1
-    local _perfBackup, _origParticleRates = nil, {}
-    local _reassertConn, _reassertLastT = nil, 0
-    local _gradeFx, _bloomFx = nil, nil
-
-    local LIGHTING_PROPS = {
-        "Brightness","ExposureCompensation","GlobalShadows","ShadowSoftness",
-        "EnvironmentDiffuseScale","EnvironmentSpecularScale","ClockTime",
-        "OutdoorAmbient","Ambient","FogEnd","FogStart","FogColor",
-        "ColorShift_Top","ColorShift_Bottom",
+local screenDraw
+do
+    local CoreGui = game:GetService("CoreGui")
+    local _layers = {}
+    local LAYER_ORDER = { base = 100000, fx = 100100 }
+    local LAYER_NAME  = { base = "LH_Overlay", fx = "LH_Overlay_FX" }
+    local FONT_MAP = {
+        [0] = Enum.Font.Gotham, [1] = Enum.Font.SourceSans,
+        [2] = Enum.Font.GothamMedium, [3] = Enum.Font.Code,
+        [4] = Enum.Font.GothamBold, [5] = Enum.Font.SourceSansBold,
     }
-    local function snapshotLighting()
-        if _origLighting then return end
-        _origLighting = {}
-        for _, p in ipairs(LIGHTING_PROPS) do
-            local ok, v = pcall(function() return Lighting[p] end)
-            if ok then _origLighting[p] = v end
+    local BLACK = Color3.new(0, 0, 0)
+    local function op(t) return 1 - (t or 1) end
+    local function gui(layer)
+        local Lr = _layers[layer]
+        if not Lr then Lr = { gui = nil, z = 0, pools = {} }; _layers[layer] = Lr end
+        if Lr.gui and Lr.gui.Parent then return Lr.gui end
+        local g = Instance.new("ScreenGui")
+        g.Name = LAYER_NAME[layer] or "LH_Overlay"
+        g.IgnoreGuiInset = true
+        g.ResetOnSpawn  = false
+        g.DisplayOrder  = LAYER_ORDER[layer] or 100000
+        g.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        local ok = pcall(function() g.Parent = (gethui and gethui()) or CoreGui end)
+        if not ok or not g.Parent then
+            pcall(function() g.Parent = lp:FindFirstChildOfClass("PlayerGui") end)
         end
+        Lr.gui = g
+        return g
     end
-    local function clearTagged()
-        for _, c in ipairs(Lighting:GetChildren()) do
-            if c:GetAttribute("VS_Custom") then c:Destroy() end
-        end
-    end
-    local function restore()
-        if not _origLighting then return end
-        clearTagged()
-        for k, v in pairs(_origLighting) do pcall(function() Lighting[k] = v end) end
-    end
-    local function fxNew(cls, props)
-        local f = Instance.new(cls)
-        f:SetAttribute("VS_Custom", true)
-        for k, v in pairs(props) do f[k] = v end
-        f.Parent = Lighting
-        return f
-    end
-
-    local Presets = {}
-    Presets.Neutral = function()
-        clearTagged()
-        Lighting.Brightness = 2; Lighting.ExposureCompensation = 0
-        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.2
-        Lighting.EnvironmentDiffuseScale = 0.5; Lighting.EnvironmentSpecularScale = 0.5
-        Lighting.ClockTime = 14; Lighting.OutdoorAmbient = Color3.fromRGB(70,70,70)
-        Lighting.Ambient = Color3.fromRGB(0,0,0); Lighting.FogEnd = 100000
-        fxNew("Atmosphere", { Density=0.3, Offset=0.25, Color=Color3.fromRGB(199,199,199),
-            Decay=Color3.fromRGB(106,112,125), Glare=0, Haze=0 })
-    end
-    Presets.Cyberpunk = function()
-        clearTagged()
-        Lighting.Brightness = 2.6; Lighting.ExposureCompensation = 0.5
-        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.7
-        Lighting.EnvironmentDiffuseScale = 0.7; Lighting.EnvironmentSpecularScale = 1
-        Lighting.ClockTime = 0; Lighting.OutdoorAmbient = Color3.fromRGB(120,80,165)
-        Lighting.Ambient = Color3.fromRGB(80,55,120)
-        fxNew("Atmosphere", { Density=0.3, Offset=0.3, Color=Color3.fromRGB(160,70,215),
-            Decay=Color3.fromRGB(75,200,240), Glare=2.2, Haze=1 })
-        fxNew("BloomEffect", { Intensity=1.15, Size=24, Threshold=0.72 })
-        fxNew("ColorCorrectionEffect", { Brightness=0.04, Contrast=0.2, Saturation=0.45,
-            TintColor=Color3.fromRGB(220,195,255) })
-    end
-    Presets.Anime = function()
-        clearTagged()
-        Lighting.Brightness = 2.3; Lighting.ExposureCompensation = 0.2
-        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.7
-        Lighting.EnvironmentDiffuseScale = 0.7; Lighting.EnvironmentSpecularScale = 0.7
-        Lighting.ClockTime = 15; Lighting.OutdoorAmbient = Color3.fromRGB(150,140,170)
-        Lighting.Ambient = Color3.fromRGB(95,85,120)
-        fxNew("Atmosphere", { Density=0.28, Offset=0.35, Color=Color3.fromRGB(255,200,230),
-            Decay=Color3.fromRGB(150,195,255), Glare=1, Haze=0.8 })
-        fxNew("BloomEffect", { Intensity=1.0, Size=26, Threshold=0.8 })
-        fxNew("ColorCorrectionEffect", { Brightness=0.03, Contrast=0.14, Saturation=0.32,
-            TintColor=Color3.fromRGB(255,228,242) })
-    end
-    Presets.Sunset = function()
-        clearTagged()
-        Lighting.Brightness = 2.3; Lighting.ExposureCompensation = 0.4
-        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.5
-        Lighting.EnvironmentDiffuseScale = 0.75; Lighting.EnvironmentSpecularScale = 0.9
-        Lighting.ClockTime = 17.75; Lighting.OutdoorAmbient = Color3.fromRGB(185,115,80)
-        Lighting.Ambient = Color3.fromRGB(105,60,45)
-        fxNew("Atmosphere", { Density=0.38, Offset=0.55, Color=Color3.fromRGB(255,150,80),
-            Decay=Color3.fromRGB(255,105,60), Glare=1.8, Haze=1.6 })
-        fxNew("BloomEffect", { Intensity=0.9, Size=24, Threshold=0.78 })
-        fxNew("ColorCorrectionEffect", { Brightness=0.03, Contrast=0.16, Saturation=0.32,
-            TintColor=Color3.fromRGB(255,195,150) })
-    end
-    Presets.Vaporwave = function()
-        clearTagged()
-        Lighting.Brightness = 2.3; Lighting.ExposureCompensation = 0.4
-        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.7
-        Lighting.EnvironmentDiffuseScale = 0.6; Lighting.EnvironmentSpecularScale = 0.9
-        Lighting.ClockTime = 18.4; Lighting.OutdoorAmbient = Color3.fromRGB(150,90,165)
-        Lighting.Ambient = Color3.fromRGB(95,60,120)
-        fxNew("Atmosphere", { Density=0.34, Offset=0.4, Color=Color3.fromRGB(255,130,205),
-            Decay=Color3.fromRGB(110,200,255), Glare=1.8, Haze=1.3 })
-        fxNew("BloomEffect", { Intensity=1.05, Size=26, Threshold=0.74 })
-        fxNew("ColorCorrectionEffect", { Brightness=0.04, Contrast=0.18, Saturation=0.38,
-            TintColor=Color3.fromRGB(255,205,240) })
-    end
-    Presets.Void = function()
-        clearTagged()
-        Lighting.Brightness = 2.0; Lighting.ExposureCompensation = 0.25
-        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.9
-        Lighting.EnvironmentDiffuseScale = 0.5; Lighting.EnvironmentSpecularScale = 0.7
-        Lighting.ClockTime = 0; Lighting.OutdoorAmbient = Color3.fromRGB(85,95,135)
-        Lighting.Ambient = Color3.fromRGB(55,62,95)
-        fxNew("Atmosphere", { Density=0.35, Offset=0.2, Color=Color3.fromRGB(55,65,110),
-            Decay=Color3.fromRGB(95,110,180), Glare=0.3, Haze=0.8 })
-        fxNew("BloomEffect", { Intensity=0.8, Size=22, Threshold=0.76 })
-        fxNew("ColorCorrectionEffect", { Brightness=0.03, Contrast=0.16, Saturation=-0.2,
-            TintColor=Color3.fromRGB(190,200,255) })
-    end
-    Presets.Clarity = function()
-        clearTagged()
-        Lighting.Brightness = 2.6; Lighting.ExposureCompensation = 0
-        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 1
-        Lighting.EnvironmentDiffuseScale = 0.2; Lighting.EnvironmentSpecularScale = 0.1
-        Lighting.ClockTime = 14; Lighting.OutdoorAmbient = Color3.fromRGB(150,150,155)
-        Lighting.Ambient = Color3.fromRGB(120,120,125); Lighting.FogEnd = 1000000
-        fxNew("ColorCorrectionEffect", { Brightness=0.05, Contrast=0.25, Saturation=-0.2,
-            TintColor=Color3.fromRGB(255,255,255) })
-    end
-    Presets.Toxic = function()
-        clearTagged()
-        Lighting.Brightness = 2.2; Lighting.ExposureCompensation = 0.35
-        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.7
-        Lighting.EnvironmentDiffuseScale = 0.6; Lighting.EnvironmentSpecularScale = 0.8
-        Lighting.ClockTime = 1; Lighting.OutdoorAmbient = Color3.fromRGB(80,135,70)
-        Lighting.Ambient = Color3.fromRGB(45,85,50)
-        fxNew("Atmosphere", { Density=0.34, Offset=0.35, Color=Color3.fromRGB(95,220,110),
-            Decay=Color3.fromRGB(55,180,80), Glare=1.8, Haze=1.4 })
-        fxNew("BloomEffect", { Intensity=1.1, Size=24, Threshold=0.74 })
-        fxNew("ColorCorrectionEffect", { Brightness=0.04, Contrast=0.2, Saturation=0.45,
-            TintColor=Color3.fromRGB(210,255,205) })
-    end
-    Presets.Sakura = function()
-        clearTagged()
-        Lighting.Brightness = 2.2; Lighting.ExposureCompensation = 0.35
-        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.8
-        Lighting.EnvironmentDiffuseScale = 0.7; Lighting.EnvironmentSpecularScale = 0.7
-        Lighting.ClockTime = 15.5; Lighting.OutdoorAmbient = Color3.fromRGB(200,155,180)
-        Lighting.Ambient = Color3.fromRGB(120,85,110)
-        fxNew("Atmosphere", { Density=0.3, Offset=0.4, Color=Color3.fromRGB(255,205,225),
-            Decay=Color3.fromRGB(255,175,215), Glare=1.2, Haze=1 })
-        fxNew("BloomEffect", { Intensity=1.1, Size=26, Threshold=0.78 })
-        fxNew("ColorCorrectionEffect", { Brightness=0.04, Contrast=0.15, Saturation=0.28,
-            TintColor=Color3.fromRGB(255,225,240) })
-    end
-    Presets.Nebula = function()
-        clearTagged()
-        Lighting.Brightness = 2.2; Lighting.ExposureCompensation = 0.4
-        Lighting.GlobalShadows = false; Lighting.ShadowSoftness = 0.9
-        Lighting.EnvironmentDiffuseScale = 0.55; Lighting.EnvironmentSpecularScale = 0.85
-        Lighting.ClockTime = 0; Lighting.OutdoorAmbient = Color3.fromRGB(128,94,168)
-        Lighting.Ambient = Color3.fromRGB(82,60,120)
-        fxNew("Atmosphere", { Density=0.34, Offset=0.25, Color=Color3.fromRGB(120,70,180),
-            Decay=Color3.fromRGB(220,90,190), Glare=1.4, Haze=1.1 })
-        fxNew("BloomEffect", { Intensity=1.15, Size=24, Threshold=0.72 })
-        fxNew("ColorCorrectionEffect", { Brightness=0.03, Contrast=0.2, Saturation=0.4,
-            TintColor=Color3.fromRGB(235,205,255) })
-    end
-
-    local _WHITE = Color3.new(1, 1, 1)
-    local _GRADES = {
-        Crisp = { B = 0.03,  C = 0.20, S = 0.18,  tint = _WHITE },
-        Cold  = { B = -0.03, C = 0.28, S = -0.22, tint = Color3.fromRGB(196, 220, 255) },
-        Warm  = { B = 0.04,  C = 0.22, S = 0.15,  tint = Color3.fromRGB(255, 222, 180) },
-        Comp  = { B = -0.01, C = 0.40, S = 0.28,  tint = Color3.fromRGB(255, 248, 236) },
-    }
-    local function getGradeFx()
-        if _gradeFx and _gradeFx.Parent then return _gradeFx end
-        local cc = Instance.new('ColorCorrectionEffect')
-        cc.Name = '_vs_grade'; cc:SetAttribute('VS_Grade', true)
-        cc.Parent = Lighting; _gradeFx = cc
-        return cc
-    end
-    local function clearGrade()
-        if _gradeFx then pcall(function() _gradeFx:Destroy() end); _gradeFx = nil end
-    end
-    local function getBloomFx()
-        if _bloomFx and _bloomFx.Parent then return _bloomFx end
-        local b = Instance.new('BloomEffect')
-        b.Name = '_vs_bloom'; b:SetAttribute('VS_Bloom', true)
-        b.Size = 24; b.Threshold = 0.8; b.Intensity = 0
-        b.Parent = Lighting; _bloomFx = b
-        return b
-    end
-    local function clearBloom()
-        if _bloomFx then pcall(function() _bloomFx:Destroy() end); _bloomFx = nil end
-    end
-
-    local _stretchFn
-    local function bindStretch()
-        if _stretchBound then return end
-        _stretchBound = true
-        RunService:BindToRenderStep('VS_Stretch', Enum.RenderPriority.Last.Value + 1, function()
-            if not running or not Camera then return end
-            local s = Config.VisualsStretch or 1.0
-            if math.abs(s - 1.0) < 0.001 and not Config.VisualsCameraSway
-                and not Config.CameraAspectRatioEnabled and not Config.ThirdPersonEnabled
-                and not Config.ExtraRatioEnabled and not Config.CameraFovOverride then return end
-            if Config.CameraFovOverride then
-                local want = math.clamp(Config.CameraFovAmount or 90, 40, 130)
-                if Camera.FieldOfView ~= want then Camera.FieldOfView = want end
+    local function build(kind)
+        if kind == "Square" then
+            local f = Instance.new("Frame")
+            f.BorderSizePixel = 0; f.BackgroundTransparency = 1
+            f.AnchorPoint = Vector2.new(0, 0); f.Visible = false
+            local st = Instance.new("UIStroke")
+            st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            st.LineJoinMode = Enum.LineJoinMode.Miter
+            st.Enabled = false; st.Parent = f
+            local ug = nil
+            local function apply(s, k)
+                if k == "Position" then if s.Position then f.Position = UDim2.fromOffset(s.Position.X, s.Position.Y) end
+                elseif k == "Size" then if s.Size then f.Size = UDim2.fromOffset(s.Size.X, s.Size.Y) end
+                elseif k == "Color" then if s.Color then f.BackgroundColor3 = s.Color; st.Color = s.Color end
+                elseif k == "Thickness" then st.Thickness = math.max(s.Thickness or 1, 0.1)
+                elseif k == "Transparency" or k == "Filled" then
+                    local o = op(s.Transparency)
+                    if s.Filled == false then f.BackgroundTransparency = 1; st.Enabled = true; st.Transparency = o
+                    else f.BackgroundTransparency = o; st.Enabled = false end
+                elseif k == "Gradient" then
+                    if s.Gradient then
+                        if not ug then ug = Instance.new("UIGradient"); ug.Parent = st end
+                        ug.Color = s.Gradient; ug.Enabled = true
+                    elseif ug then ug.Enabled = false end
+                elseif k == "GradientRotation" then if ug then ug.Rotation = s.GradientRotation or 0 end
+                elseif k == "Visible" then f.Visible = s.Visible and true or false end
             end
-            local c = Camera.CFrame
-            if Config.VisualsCameraSway then
-                local amt = math.clamp(Config.VisualsCameraSwayAmount or 0.5, 0, 1)
-                local t = tick()
-                local roll  = (math.sin(t * 0.9) + math.sin(t * 0.37) * 0.6) * amt
-                local pitch =  math.sin(t * 1.3) * 0.7 * amt
-                local yaw   =  math.sin(t * 0.7) * 0.8 * amt
-                c = c * CFrame.Angles(math.rad(pitch), math.rad(yaw), math.rad(roll))
+            return f, apply
+        elseif kind == "Line" then
+            local f = Instance.new("Frame")
+            f.BorderSizePixel = 0; f.AnchorPoint = Vector2.new(0.5, 0.5); f.Visible = false
+            local _len = nil
+            local function geom(s)
+                if not (s.From and s.To) then return end
+                local dx, dy = s.To.X - s.From.X, s.To.Y - s.From.Y
+                local len = math.sqrt(dx * dx + dy * dy)
+                _len = len
+                f.Position = UDim2.fromOffset((s.From.X + s.To.X) * 0.5, (s.From.Y + s.To.Y) * 0.5)
+                f.Size     = UDim2.fromOffset(len, math.max(s.Thickness or 1, 0.1))
+                f.Rotation = math.deg(math.atan2(dy, dx))
             end
-            if math.abs(s - 1.0) >= 0.001 then
-                c = CFrame.fromMatrix(c.Position, c.RightVector * s, c.UpVector)
+            local function apply(s, k)
+                if k == "To" then geom(s)
+                elseif k == "From" then
+                elseif k == "Thickness" then if _len then f.Size = UDim2.fromOffset(_len, math.max(s.Thickness or 1, 0.1)) end
+                elseif k == "Color" then if s.Color then f.BackgroundColor3 = s.Color end
+                elseif k == "Transparency" then f.BackgroundTransparency = op(s.Transparency)
+                elseif k == "Visible" then f.Visible = s.Visible and true or false end
             end
-            if Config.ThirdPersonEnabled and LP.Character then
-                local dist = math.clamp(Config.ThirdPersonDistance or 12, 4, 30)
-                local params = RaycastParams.new()
-                params.FilterType = Enum.RaycastFilterType.Exclude
-                params.FilterDescendantsInstances = { LP.Character }
-                local hit = workspace:Raycast(c.Position, -c.LookVector * dist, params)
-                local desired = c.Position - c.LookVector * dist
-                if hit then desired = hit.Position + c.LookVector * 0.5 end
-                c = (c - c.Position) + desired
+            return f, apply
+        elseif kind == "Text" then
+            local t = Instance.new("TextLabel")
+            t.BackgroundTransparency = 1; t.BorderSizePixel = 0; t.Visible = false
+            t.AutomaticSize = Enum.AutomaticSize.XY; t.RichText = false
+            t.TextYAlignment = Enum.TextYAlignment.Top
+            t.AnchorPoint = Vector2.new(0, 0); t.TextXAlignment = Enum.TextXAlignment.Left
+            local st = Instance.new("UIStroke"); st.Thickness = 1; st.Color = BLACK
+            st.LineJoinMode = Enum.LineJoinMode.Miter
+            st.Enabled = false; st.Parent = t
+            local function apply(s, k)
+                if k == "Text" then t.Text = tostring(s.Text or "")
+                elseif k == "Size" then t.TextSize = math.max(s.Size or 12, 1)
+                elseif k == "Font" then t.Font = FONT_MAP[s.Font or 2] or Enum.Font.GothamMedium
+                elseif k == "Color" then if s.Color then t.TextColor3 = s.Color end
+                elseif k == "Center" or k == "RightAlign" then
+                    if s.Center then t.AnchorPoint = Vector2.new(0.5, 0); t.TextXAlignment = Enum.TextXAlignment.Center
+                    elseif s.RightAlign then t.AnchorPoint = Vector2.new(1, 0); t.TextXAlignment = Enum.TextXAlignment.Right
+                    else t.AnchorPoint = Vector2.new(0, 0); t.TextXAlignment = Enum.TextXAlignment.Left end
+                    if s.Position then t.Position = UDim2.fromOffset(s.Position.X, s.Position.Y) end
+                elseif k == "Position" then if s.Position then t.Position = UDim2.fromOffset(s.Position.X, s.Position.Y) end
+                elseif k == "Outline" then st.Enabled = s.Outline and true or false
+                elseif k == "OutlineColor" then if s.OutlineColor then st.Color = s.OutlineColor end
+                elseif k == "Transparency" then local o = op(s.Transparency); t.TextTransparency = o; st.Transparency = o
+                elseif k == "Visible" then t.Visible = s.Visible and true or false end
             end
-            Camera.CFrame = c
-        end)
-    end
-
-    Visuals.PresetOrder = { "Neutral", "Clarity", "Cyberpunk", "Anime", "Sunset", "Vaporwave", "Toxic", "Void", "Sakura", "Nebula" }
-    Visuals.GradeOrder = { "None", "Crisp", "Cold", "Warm", "Comp" }
-    Visuals.HologramStyleOrder = { "Orb", "Skeleton", "Wraith" }
-
-    local function applyPreset(name)
-        if not Config.Visuals or Config.VisualsPerformanceMode then return end
-        local fn = Presets[name]; if not fn then return end
-        pcall(fn); State.VisualsCurrentPreset = name; Config.VisualsPreset = name
-    end
-
-    function Visuals.setPreset(name) if Presets[name] then Config.VisualsPreset = name; applyPreset(name) end end
-
-    function Visuals.togglePerf(on)
-        Config.VisualsPerformanceMode = on
-        if on then
-            clearTagged(); clearGrade(); clearBloom()
-            Lighting.GlobalShadows = false; Lighting.EnvironmentDiffuseScale = 0
-            Lighting.EnvironmentSpecularScale = 0; Lighting.Brightness = 2
-        else
-            applyPreset(State.VisualsCurrentPreset or Config.VisualsPreset or 'Neutral')
-        end
-    end
-
-    function Visuals.toggleFullbright(on)
-        Config.VisualsFullbright = on
-        if on then
-            pcall(function() Lighting.Ambient = _WHITE; Lighting.OutdoorAmbient = _WHITE; Lighting.GlobalShadows = false end)
-        else
-            applyPreset(State.VisualsCurrentPreset or Config.VisualsPreset or 'Neutral')
-        end
-    end
-    function Visuals.toggleNoFog(on)
-        Config.VisualsNoFog = on
-        if on then
-            pcall(function() Lighting.FogEnd = 1e6; Lighting.FogStart = 1e6 end)
-            for _, c in ipairs(Lighting:GetChildren()) do
-                if c:IsA('Atmosphere') then pcall(function() c.Density = 0 end) end
-            end
-        else
-            applyPreset(State.VisualsCurrentPreset or Config.VisualsPreset or 'Neutral')
-        end
-    end
-
-    local function startRainbow()
-        if _rainbowConn then return end
-        _rainbowBatchIdx = 1; table.clear(_rainbowParts)
-        local charSet = {}
-        for _, pl in ipairs(Players:GetPlayers()) do
-            if pl.Character then charSet[pl.Character] = true end
-        end
-        for _, d in ipairs(workspace:GetDescendants()) do
-            if d:IsA('BasePart') and not d:GetAttribute('VS_Holo') and not charSet[d.Parent] then
-                table.insert(_rainbowParts, { part = d, originalColor = d.Color })
-            end
-        end
-        _rainbowConn = RunService.Heartbeat:Connect(function(dt)
-            if not Config.Visuals or not Config.VisualsRainbowMap then return end
-            _rainbowHue = (_rainbowHue + dt * Config.VisualsRainbowMapSpeed) % 1
-            local total = #_rainbowParts; if total == 0 then return end
-            local batch = math.min(250, total)
-            for i = 1, batch do
-                local idx = ((_rainbowBatchIdx - 1 + i - 1) % total) + 1
-                local e = _rainbowParts[idx]
-                if e and e.part and e.part.Parent then
-                    e.part.Color = Color3.fromHSV((_rainbowHue + (idx / total) * 0.3) % 1, 0.85, 1)
-                end
-            end
-            _rainbowBatchIdx = ((_rainbowBatchIdx + batch - 1) % total) + 1
-        end)
-    end
-    local function stopRainbow()
-        if _rainbowConn then _rainbowConn:Disconnect(); _rainbowConn = nil end
-        for _, e in ipairs(_rainbowParts) do
-            if e.part and e.part.Parent then pcall(function() e.part.Color = e.originalColor end) end
-        end
-        table.clear(_rainbowParts)
-    end
-    function Visuals.toggleRainbowMap(on)
-        Config.VisualsRainbowMap = on
-        if on and Config.Visuals then startRainbow() else stopRainbow() end
-    end
-
-    function Visuals.enable()
-        Config.Visuals = true
-        applyPreset(Config.VisualsPreset or 'Neutral')
-        bindStretch()
-        if Config.VisualsRainbowMap then startRainbow() end
-        if Config.VisualsPerformanceMode then Visuals.togglePerf(true) end
-    end
-    function Visuals.disable()
-        Config.Visuals = false
-        stopRainbow()
-        clearGrade(); clearBloom()
-        restore()
-    end
-    function Visuals.unload()
-        Visuals.disable()
-        if _hologramFolder then pcall(function() _hologramFolder:Destroy() end); _hologramFolder = nil end
-        if _stretchBound then
-            pcall(function() RunService:UnbindFromRenderStep('VS_Stretch') end)
-            _stretchBound = false
-        end
-    end
-    function Visuals.init() snapshotLighting(); bindStretch() end
-
-    -- Hologram engine (simplified - Orb style)
-    local function getHoloFolder()
-        if _hologramFolder and _hologramFolder.Parent then return _hologramFolder end
-        local f = Instance.new('Folder'); f.Name = '_vs_holos'; f.Parent = workspace
-        _hologramFolder = f; return f
-    end
-
-    local _GOLD = Color3.fromRGB(255,200,60)
-    local _EDGE = Color3.fromRGB(155,232,255)
-
-    local function createHologram(character, lethal)
-        if not character or not character.Parent then return end
-        local rp = character:FindFirstChild('HitboxHead') or character:FindFirstChild('Head')
-            or character:FindFirstChild('HumanoidRootPart') or character:FindFirstChild('UpperTorso')
-        if not rp then return end
-        if (rp.Position - Camera.CFrame.Position).Magnitude > Config.VisualsHologramRange then return end
-        if #getHoloFolder():GetChildren() >= 16 then return end
-        local dur = math.clamp(Config.VisualsHologramDuration or 3.5, 0.25, 10)
-        local color = lethal and Config.VisualsHologramLethalColor or Config.VisualsHologramColor
-        local folder = getHoloFolder()
-        local function mkBall(size, transp, c)
-            local b = Instance.new('Part')
-            b.Shape = Enum.PartType.Ball; b.Size = Vector3.new(size, size, size)
-            b.Material = Enum.Material.Neon; b.Color = c; b.Transparency = transp
-            b.Anchored = true; b.CanCollide = false; b.CanQuery = false; b.CanTouch = false
-            b.CastShadow = false; b.Massless = true
-            b:SetAttribute('VS_Holo', true)
-            return b
-        end
-        local core = mkBall(0.7, 0.05, color)
-        local halo = mkBall(1.7, 0.65, color)
-        local cf = CFrame.new(rp.Position)
-        core.CFrame = cf; halo.CFrame = cf
-        core.Parent = folder; halo.Parent = folder
-        local startT = tick()
-        local conn = RunService.Heartbeat:Connect(function()
-            if not core.Parent then if conn then conn:Disconnect() end return end
-            local a = math.clamp((tick() - startT) / dur, 0, 1)
-            local rise = 2.5 * (1 - (1 - a) * (1 - a))
-            local np = cf.Position + Vector3.new(0, rise, 0)
-            core.CFrame = CFrame.new(np); halo.CFrame = CFrame.new(np)
-            core.Transparency = math.clamp(0.05 + 0.95 * a, 0, 1)
-            halo.Transparency = math.clamp(0.65 + 0.35 * a, 0, 1)
-            if a >= 1 and conn then conn:Disconnect() end
-        end)
-        Debris:AddItem(core, dur + 0.2)
-        Debris:AddItem(halo, dur + 0.2)
-    end
-
-    function Visuals.previewHologram(char) createHologram(char, Config.VisualsHologramLethal) end
-    function Visuals.onShotHit(char)
-        if not Config.VisualsHolograms or not char then return end
-        local now = tick()
-        if now - (_hologramCooldowns[char] or 0) < 0.15 then return end
-        _hologramCooldowns[char] = now
-        local hum = char:FindFirstChildOfClass('Humanoid')
-        createHologram(char, hum and hum.Health <= 0)
-    end
-
-    -- FX system (hit markers, damage numbers, kill feed)
-    local _hitMarker = { on = false, t0 = 0, pop = 0, color = _WHITE }
-    local _damageNumbers = {}
-    local _killFeed = {}
-    local _started = false
-    local _fxGui = nil
-    local _hitLines, _hitLinesBlk = {}, {}
-    local _dnText = {}
-    local _killText = {}
-    local _flashFrame = nil
-    local _hf = { on = false, t0 = 0 }
-
-    local function ensureFxGui()
-        if _fxGui and _fxGui.Parent then return end
-        local g = Instance.new('ScreenGui')
-        g.Name = '_vs_fx'; g.IgnoreGuiInset = true; g.ResetOnSpawn = false
-        g.DisplayOrder = 999
-        pcall(function() g.Parent = (gethui and gethui()) or game:GetService('CoreGui') end)
-        if not g.Parent then pcall(function() g.Parent = LP:FindFirstChildOfClass('PlayerGui') end) end
-        _fxGui = g
-    end
-
-    local function ensureFxAllocated()
-        if _hitLines[1] then return end
-        ensureFxGui()
-        local g = _fxGui
-        for i = 1, 4 do
-            local f = Instance.new('Frame')
+            return t, apply
+        elseif kind == "Circle" then
+            local f = Instance.new("Frame")
             f.BorderSizePixel = 0; f.AnchorPoint = Vector2.new(0.5, 0.5)
-            f.Visible = false; f.ZIndex = 5
-            f.BackgroundColor3 = Color3.new(0, 0, 0)
-            f.Parent = g
-            _hitLinesBlk[i] = f
-            local l = Instance.new('Frame')
-            l.BorderSizePixel = 0; l.AnchorPoint = Vector2.new(0.5, 0.5)
-            l.Visible = false; l.ZIndex = 6
-            l.Parent = g
-            _hitLines[i] = l
+            f.BackgroundTransparency = 1; f.Visible = false
+            local uc = Instance.new("UICorner"); uc.CornerRadius = UDim.new(1, 0); uc.Parent = f
+            local st = Instance.new("UIStroke"); st.Enabled = false; st.Parent = f
+            local function apply(s, k)
+                if k == "Radius" then local d = 2 * (s.Radius or 0); f.Size = UDim2.fromOffset(d, d)
+                elseif k == "Position" then if s.Position then f.Position = UDim2.fromOffset(s.Position.X, s.Position.Y) end
+                elseif k == "Color" then if s.Color then f.BackgroundColor3 = s.Color; st.Color = s.Color end
+                elseif k == "Thickness" then st.Thickness = math.max(s.Thickness or 1, 0.1)
+                elseif k == "Transparency" or k == "Filled" then
+                    local o = op(s.Transparency)
+                    if s.Filled == false then f.BackgroundTransparency = 1; st.Enabled = true; st.Transparency = o
+                    else f.BackgroundTransparency = o; st.Enabled = false end
+                elseif k == "Visible" then f.Visible = s.Visible and true or false end
+            end
+            return f, apply
         end
-        for i = 1, 24 do
-            local t = Instance.new('TextLabel')
-            t.BackgroundTransparency = 1; t.Font = Enum.Font.GothamBold
-            t.TextSize = 14; t.Visible = false; t.ZIndex = 10
-            t.TextColor3 = _WHITE
-            local st = Instance.new('UIStroke'); st.Thickness = 1; st.Color = Color3.new(0,0,0)
-            st.Parent = t
-            t.Parent = g
-            _dnText[i] = t
-        end
-        for i = 1, 5 do
-            local t = Instance.new('TextLabel')
-            t.BackgroundTransparency = 1; t.Font = Enum.Font.Code
-            t.TextSize = 13; t.TextXAlignment = Enum.TextXAlignment.Right
-            t.TextColor3 = _WHITE; t.Visible = false; t.ZIndex = 10
-            local st = Instance.new('UIStroke'); st.Thickness = 1; st.Color = Color3.new(0,0,0)
-            st.Parent = t
-            t.Parent = g
-            _killText[i] = t
-        end
-        local f = Instance.new('Frame')
-        f.Name = '_fl'; f.BackgroundColor3 = Color3.fromRGB(194,30,47)
-        f.BackgroundTransparency = 1; f.BorderSizePixel = 0
-        f.Size = UDim2.new(1, 0, 1, 0); f.Visible = false; f.ZIndex = 1
-        f.Parent = g
-        _flashFrame = f
+        return nil
     end
-
-    local function triggerHitMarker(crit, lethal)
-        ensureFxAllocated()
-        local now = tick()
-        if _hitMarker.on and (now - _hitMarker.t0) < 0.18 then
-            _hitMarker.pop = math.min(_hitMarker.pop + 1, 3)
+    screenDraw = function(kind, layer)
+        layer = layer or "base"
+        local Lr = _layers[layer]
+        if not Lr then Lr = { gui = nil, z = 0, pools = {} }; _layers[layer] = Lr end
+        local pool = Lr.pools[kind]; if not pool then pool = {}; Lr.pools[kind] = pool end
+        local inst, applyFn
+        local reused = table.remove(pool)
+        if reused then
+            inst, applyFn = reused.inst, reused.apply
         else
-            _hitMarker.pop = 0
+            inst, applyFn = build(kind)
+            if not inst then return nil end
+            inst.Parent = gui(layer)
         end
-        _hitMarker.on = true; _hitMarker.t0 = now
-        _hitMarker.color = (lethal and Config.FXHitMarkerLethalColor)
-            or (crit and Config.FXHitMarkerCritColor)
-            or Config.FXHitMarkerColor
-    end
-
-    local function pushDamageNumber(p, dmg, crit, lethal, hitPos)
-        ensureFxAllocated()
-        if not hitPos then return end
-        for _, e in ipairs(_damageNumbers) do
-            if e.p == p and (tick() - e.t0) < Config.FXDamageAccumWindow then
-                e.total = e.total + dmg; e.t0 = tick(); e.popT = tick()
-                return
-            end
-        end
-        for _, t in ipairs(_dnText) do
-            if not t.Visible then
-                table.insert(_damageNumbers, { t = t, p = p, total = dmg, t0 = tick(),
-                    popT = tick(), pos = hitPos, drift = math.random(-8, 8),
-                    crit = crit, lethal = lethal })
-                return
-            end
-        end
-    end
-
-    local _sessKills = 0
-    local function pushKillFeed(p, crit)
-        ensureFxAllocated()
-        table.insert(_killFeed, 1, { text = 'You  ·  ' .. tostring(p.DisplayName or p.Name),
-            t0 = tick(), crit = crit })
-        while #_killFeed > 5 do table.remove(_killFeed) end
-    end
-
-    local function triggerFlash()
-        if not _flashFrame then return end
-        _hf.on = true; _hf.t0 = tick()
-    end
-
-    function FX.onHit(p, dmg, crit, lethal, hitPos)
-        if not _started then return end
-        if Config.FXHitMarker then triggerHitMarker(crit, lethal) end
-        if dmg > 0 and Config.FXDamageNumbers then pushDamageNumber(p, dmg, crit, lethal, hitPos) end
-        if lethal then
-            _sessKills = _sessKills + 1
-            if Config.FXKillFeed then pushKillFeed(p, crit) end
-        end
-    end
-
-    function FX.onIncoming(drop)
-        if not _started then return end
-        if Config.FXHitFlash then triggerFlash() end
-    end
-
-    local function fxUpdate()
-        local now = tick()
-        local vp = Camera.ViewportSize
-        local cx, cy = vp.X * 0.5, vp.Y * 0.5
-
-        if _hitMarker.on then
-            local a = now - _hitMarker.t0
-            if a >= 0.18 then
-                _hitMarker.on = false
-                for i = 1, 4 do
-                    if _hitLines[i] then _hitLines[i].Visible = false end
-                    if _hitLinesBlk[i] then _hitLinesBlk[i].Visible = false end
-                end
-            else
-                local snap = math.clamp(a / 0.07, 0, 1)
-                snap = 1 - (1 - snap) * (1 - snap)
-                local gap = Config.FXHitMarkerGap
-                local len = Config.FXHitMarkerLen * snap + _hitMarker.pop
-                local th  = Config.FXHitMarkerThickness
-                local tr  = 1 - math.clamp((a - 0.09) / 0.09, 0, 1)
-                local diag = { Vector2.new(1,1), Vector2.new(-1,1), Vector2.new(1,-1), Vector2.new(-1,-1) }
-                local inv = 0.70710678
-                for i = 1, 4 do
-                    local nx = diag[i].X * inv
-                    local ny = diag[i].Y * inv
-                    local from = Vector2.new(cx + nx * gap, cy + ny * gap)
-                    local to   = Vector2.new(cx + nx * (gap + len), cy + ny * (gap + len))
-                    local l = _hitLines[i]; local lb = _hitLinesBlk[i]
-                    if l and lb then
-                        local dx = to.X - from.X; local dy = to.Y - from.Y
-                        local len2 = math.sqrt(dx * dx + dy * dy)
-                        local mid = Vector2.new((from.X + to.X) * 0.5, (from.Y + to.Y) * 0.5)
-                        local rot = math.deg(math.atan2(dy, dx))
-                        lb.Visible = true; lb.Position = UDim2.fromOffset(mid.X, mid.Y)
-                        lb.Size = UDim2.fromOffset(len2, th + 2); lb.Rotation = rot
-                        lb.BackgroundColor3 = Color3.new(0,0,0); lb.BackgroundTransparency = 1 - tr
-                        l.Visible = true; l.Position = UDim2.fromOffset(mid.X, mid.Y)
-                        l.Size = UDim2.fromOffset(len2, th); l.Rotation = rot
-                        l.BackgroundColor3 = _hitMarker.color; l.BackgroundTransparency = 1 - tr
-                    end
-                end
-            end
-        end
-
-        for i = #_damageNumbers, 1, -1 do
-            local e = _damageNumbers[i]
-            local a = (now - e.t0) / 0.7
-            if a >= 1 then
-                e.t.Visible = false
-                table.remove(_damageNumbers, i)
-            else
-                local sp = Camera:WorldToViewportPoint(e.pos)
-                if sp.Z <= 0 then
-                    e.t.Visible = false
-                else
-                    local ease = 1 - (1 - a) * (1 - a)
-                    local pop = 1 + 0.25 * (1 - math.clamp((now - e.popT) / 0.12, 0, 1))
-                    e.t.TextSize = math.floor((14 + math.clamp(e.total / 50, 0, 1) * 8) * pop + 0.5)
-                    e.t.Text = tostring(math.floor(e.total + 0.5))
-                    if e.crit or e.lethal then e.t.TextColor3 = _GOLD
-                    else e.t.TextColor3 = Color3.fromRGB(200,200,200) end
-                    e.t.Position = UDim2.fromOffset(sp.X + e.drift * a, sp.Y - 42 * ease)
-                    e.t.TextTransparency = a < 0.6 and 0 or (a - 0.6) / 0.4
-                    e.t.Visible = true
-                end
-            end
-        end
-
-        for i, t in ipairs(_killText) do
-            local kf = _killFeed[i]
-            if not kf or (now - kf.t0) >= 5 then
-                t.Visible = false
-            else
-                local a = now - kf.t0
-                local slide = math.clamp(a / 0.12, 0, 1)
-                slide = 1 - (1 - slide) * (1 - slide)
-                t.Text = kf.text
-                t.TextColor3 = kf.crit and _GOLD or _WHITE
-                t.Position = UDim2.new(1, -16 - 200 + (1 - slide) * 30, 0, 110 + (i - 1) * 18)
-                t.TextTransparency = a < 4 and 0 or (a - 4)
-                t.Visible = true
-            end
-        end
-        for i = #_killFeed, 1, -1 do
-            if (now - _killFeed[i].t0) >= 5 then table.remove(_killFeed, i) end
-        end
-
-        if _hf.on and _flashFrame then
-            local a = (now - _hf.t0) / 0.16
-            if a >= 1 then
-                _hf.on = false; _flashFrame.Visible = false
-            else
-                _flashFrame.BackgroundTransparency = 0.78 + 0.22 * a
-                _flashFrame.Visible = true
-            end
-        end
-    end
-
-    function FX.start()
-        if _started then return end
-        _started = true
-        ensureFxAllocated()
-        RunService.RenderStepped:Connect(function()
-            if _started then pcall(fxUpdate) end
-        end)
-    end
-    function FX.stop()
-        _started = false
-    end
-
-    Visuals.FX = FX
-
-    -- Frame class-based stub for legacy screenDraw calls (kept for compat, unused)
-    function Visuals.setStretch(v)
-        Config.VisualsStretch = math.clamp(v, Config.VisualsStretchMin, Config.VisualsStretchMax)
-    end
-end)()
-
--- ============================================================
--- ============ WEATHER ============
--- ============================================================
-local Weather = {}
-;(function()
-    local function cfg(k, d) local v = Config[k]; if v == nil then return d end return v end
-    Weather.TypeOrder = { "Rain", "Snow", "Mist", "Embers", "Fireflies", "Petals", "Autumn", "Ash", "Sandstorm", "BloodMoon" }
-    local _folder = nil
-    local function getFolder()
-        if _folder and _folder.Parent then return _folder end
-        local f = Instance.new('Folder'); f.Name = '_wx'; f:SetAttribute('WX_Custom', true)
-        f.Parent = workspace; _folder = f; return f
-    end
-    local _rain = { drops = {}, conn = nil, folder = nil }
-    local RAIN_DIR = Vector3.new(-0.16, -1, 0.05).Unit
-    local function startRain()
-        if _rain.conn then return end
-        local f = Instance.new('Folder'); f.Name = '_wxRain'; f.Parent = getFolder()
-        _rain.folder = f
-        for i = 1, 150 do
-            local p = Instance.new('Part')
-            p.Anchored = true; p.CanCollide = false; p.Transparency = 1
-            p.Size = Vector3.new(0.05, 0.05, 0.05); p.Parent = f
-            local a0 = Instance.new('Attachment'); a0.Parent = p
-            local a1 = Instance.new('Attachment'); a1.Position = RAIN_DIR * 5; a1.Parent = p
-            local b = Instance.new('Beam')
-            b.Attachment0 = a0; b.Attachment1 = a1; b.Segments = 1; b.FaceCamera = true
-            b.Width0 = 0.1; b.Width1 = 0.06
-            b.Color = ColorSequence.new(Color3.fromRGB(180, 202, 232))
-            b.Transparency = NumberSequence.new(0.22)
-            b.Parent = p
-            _rain.drops[i] = { part = p, pos = Vector3.new(0, 0, 0), spd = 150 + math.random() * 30 }
-        end
-        _rain.conn = RunService.Heartbeat:Connect(function(dt)
-            if not Config.Weather then return end
-            local camPos = Camera.CFrame.Position
-            for i = 1, #_rain.drops do
-                local d = _rain.drops[i]
-                local p = d.pos + RAIN_DIR * (d.spd * dt)
-                if (p - camPos).Magnitude > 80 or p.Y < camPos.Y - 30 then
-                    p = Vector3.new(camPos.X + (math.random() - 0.5) * 140,
-                        camPos.Y + 70, camPos.Z + (math.random() - 0.5) * 140)
-                end
-                d.pos = p; d.part.CFrame = CFrame.new(p)
-            end
-        end)
-    end
-    local function stopRain()
-        if _rain.conn then _rain.conn:Disconnect(); _rain.conn = nil end
-        if _rain.folder then pcall(function() _rain.folder:Destroy() end); _rain.folder = nil end
-        table.clear(_rain.drops)
-    end
-    function Weather.setType(name)
-        Config.WeatherType = name
-        if not Config.Weather then return end
-        stopRain()
-        if name == "Rain" then startRain() end
-    end
-    function Weather.setIntensity(v) Config.WeatherIntensity = math.clamp(v, 0.15, 2) end
-    function Weather.setSoundVolume(v)
-        Config.WeatherSoundVolume = v
-    end
-    function Weather.toggleStorm(on) Config.WeatherStorm = on end
-    function Weather.setStormMin(v) Config.WeatherStormMin = math.clamp(v, 1, 30) end
-    function Weather.setStormVar(v) Config.WeatherStormVar = math.clamp(v, 0, 30) end
-    function Weather.setMeteorRate(v) Config.WeatherMeteorRate = math.clamp(v, 0.25, 3) end
-    function Weather.setStarRate(v) Config.WeatherStarRate = math.clamp(v, 0.25, 3) end
-    function Weather.togglePuddles(on) Config.WeatherPuddles = on end
-    function Weather.toggleMood(on) Config.WeatherMood = on end
-    function Weather.toggleMeteors(on) Config.WeatherMeteors = on end
-    function Weather.toggleShootingStars(on) Config.WeatherShootingStars = on end
-    function Weather.toggleClock(on) Config.WeatherClockDial = on end
-    Weather.SkyboxOrder = { "Off" }
-    function Weather.setSkybox(name) Config.SkyboxPreset = name end
-    function Weather.toggleCelestial(hide) Config.SkyboxHideCelestial = hide end
-    function Weather.toggleGodRays(on) Config.WeatherGodRays = on end
-    function Weather.toggleRainbow(on) Config.WeatherRainbow = on end
-    function Weather.enableWeather()
-        Config.Weather = true
-        getFolder()
-        if Config.WeatherType == "Rain" then startRain() end
-    end
-    function Weather.disableWeather()
-        Config.Weather = false
-        stopRain()
-    end
-    function Weather.init()
-        if Config.Weather then Weather.enableWeather() end
-    end
-    function Weather.unload()
-        Weather.disableWeather()
-        if _folder then pcall(function() _folder:Destroy() end); _folder = nil end
-    end
-end)()
-
--- ============================================================
--- ============ GAMEVISUALS ============
--- ============================================================
-local GameVisuals = { uiAlive = true }
-;(function()
-    local NONE_COSMETIC   = "NONE_COSMETIC"
-    local RANDOM_COSMETIC = "RANDOM_COSMETIC"
-    local _log, _lastNote = {}, nil
-    local function note(msg)
-        State.GVStatus = msg
-        if msg == _lastNote then return end
-        _lastNote = msg
-        table.insert(_log, os.date("%H:%M:%S") .. "  " .. msg)
-        if #_log > 60 then table.remove(_log, 1) end
-    end
-    function GameVisuals.history(n)
-        local out = {}
-        local want = n or 12
-        for i = #_log, math.max(1, #_log - want + 1), -1 do table.insert(out, _log[i]) end
-        if #out == 0 then table.insert(out, "nothing yet") end
-        return out
-    end
-
-    GameVisuals.Choices = {}
-    GameVisuals.InventoryVisibility = {}
-    GameVisuals.WeaponVisibility = {}
-
-    local function selectionFor(itemName) return GameVisuals.Choices[itemName] end
-
-    local _maskTarget, _maskInner = nil, nil
-    local _spoof = {}
-    local _favOverride = {}
-
-    local function refreshAll()
-        pcall(function()
-            local cur = Rivals.PlayerDataController and Rivals.PlayerDataController.CurrentData
-            if cur ~= nil and cur.Replicate then
-                cur:Replicate("CosmeticInventory")
-                cur:Replicate("FavoritedCosmetics")
-                cur:Replicate("WeaponInventory")
-                cur:Replicate("EquippedEmotes")
-            end
-        end)
-    end
-
-    local function maskRemove()
-        if _maskTarget == nil then return end
-        local target, inner = _maskTarget, _maskInner
-        _maskTarget, _maskInner = nil, nil
-        pcall(function() rawset(target, "Data", inner) end)
-    end
-
-    local function maskInstall()
-        if Rivals.PlayerDataController == nil then return false, "PlayerDataController did not resolve" end
-        local cur = nil
-        pcall(function() cur = Rivals.PlayerDataController.CurrentData end)
-        if cur == nil then return false, "no CurrentData yet" end
-        if cur == _maskTarget then return true end
-        maskRemove()
-        local inner = rawget(cur, "Data")
-        if type(inner) ~= "table" then return false, "CurrentData.Data is not a table" end
-        local proxy = setmetatable({}, {
+        Lr.z = Lr.z + 1; inst.ZIndex = Lr.z
+        inst.Visible = false
+        local state = {}
+        return setmetatable({}, {
             __index = function(_, k)
-                local p = _spoof[k]
-                if p ~= nil then return p(inner[k]) end
-                return inner[k]
+                if k == "Remove" then
+                    return function()
+                        inst.Visible = false
+                        pool[#pool + 1] = { inst = inst, apply = applyFn }
+                    end
+                elseif k == "TextBounds" then
+                    return inst.TextBounds
+                end
+                return state[k]
             end,
-            __newindex = function(_, k, v) inner[k] = v end,
+            __newindex = function(_, k, v)
+                if state[k] == v then return end
+                state[k] = v
+                applyFn(state, k)
+            end,
         })
-        rawset(cur, "Data", proxy)
-        _maskTarget, _maskInner = cur, inner
-        return true
-    end
-
-    local function applyMaskFields()
-        if Config.GVUnlockAll == true then _spoof.CosmeticInventory = function(real) return real end
-        else _spoof.CosmeticInventory = nil end
-    end
-
-    local function maskNeeded()
-        return Config.GVUnlockAll == true or Config.GVUnlockWeapons == true or Config.GVEmotes == true
-    end
-
-    local function syncMask()
-        applyMaskFields()
-        if not maskNeeded() then maskRemove(); refreshAll(); return true end
-        local ok = maskInstall()
-        refreshAll()
-        return ok
-    end
-
-    function GameVisuals.setUnlockAll(on)
-        Config.GVUnlockAll = (on == true)
-        local ok = syncMask()
-        note("unlock all " .. tostring(Config.GVUnlockAll) .. (ok and "" or " (pending)"))
-    end
-    function GameVisuals.setUnlockWeapons(on)
-        Config.GVUnlockWeapons = (on == true)
-        syncMask()
-    end
-    function GameVisuals.syncEmotes(on)
-        Config.GVEmotes = (on == true)
-        syncMask()
-    end
-    function GameVisuals.setInventoryVisibility(names, shown)
-        if names == nil then table.clear(GameVisuals.InventoryVisibility)
-        else for _, n in ipairs(names) do GameVisuals.InventoryVisibility[n] = shown end end
-        syncMask()
-    end
-    function GameVisuals.setWeaponVisibility(name, shown)
-        if name == nil then table.clear(GameVisuals.WeaponVisibility)
-        else GameVisuals.WeaponVisibility[name] = shown end
-        syncMask()
-    end
-
-    local CAT = nil
-    local function buildCatalog()
-        if CAT ~= nil then return end
-        CAT = { Skin = { "None" }, Charm = { "None" }, Wrap = { "None" },
-                Finisher = { "None" }, weapons = { "None" }, byWeapon = {}, owner = {} }
-        pcall(function()
-            local cos = Rivals.Cosmetics.Cosmetics
-            if type(cos) ~= "table" then return end
-            for name, entry in pairs(cos) do
-                if type(entry) == "table" and entry.Hidden ~= true then
-                    local t = entry.Type
-                    if t == "Skin" and type(entry.ItemName) == "string" then
-                        local item = entry.ItemName
-                        CAT.owner[name] = item
-                        CAT.owner[item .. " | " .. name] = item
-                        table.insert(CAT.Skin, item .. " | " .. name)
-                        if CAT.byWeapon[item] == nil then
-                            CAT.byWeapon[item] = { "None" }
-                            table.insert(CAT.weapons, item)
-                        end
-                        table.insert(CAT.byWeapon[item], name)
-                    elseif CAT[t] ~= nil then
-                        table.insert(CAT[t], name)
-                    end
-                end
-            end
-        end)
-    end
-
-    function GameVisuals.listOf(kind) buildCatalog(); return CAT[kind] or { "None" } end
-    function GameVisuals.skinList()  return GameVisuals.listOf("Skin") end
-    function GameVisuals.charmList() return GameVisuals.listOf("Charm") end
-    function GameVisuals.wrapList()  return GameVisuals.listOf("Wrap") end
-    function GameVisuals.finisherList() return GameVisuals.listOf("Finisher") end
-    function GameVisuals.weaponList() buildCatalog(); return CAT.weapons end
-
-    local _weapon = nil
-    GameVisuals.lastWeapon = nil
-    function GameVisuals.setWeapon(name)
-        if name == nil or name == "None" then _weapon = nil else _weapon = name end
-        GameVisuals.lastWeapon = _weapon
-    end
-
-    function GameVisuals.setFor(weapon, kind, name, inverted)
-        if type(weapon) ~= "string" or type(kind) ~= "string" then return end
-        buildCatalog()
-        local slot = GameVisuals.Choices[weapon]
-        if slot == nil then slot = {}; GameVisuals.Choices[weapon] = slot end
-        if name == nil or name == "None" then slot[kind] = { Name = NONE_COSMETIC }
-        elseif name == "Random" then slot[kind] = { Name = RANDOM_COSMETIC, Type = kind }
-        else slot[kind] = { Name = name, Inverted = inverted == true } end
-        note(weapon .. " " .. kind .. " = " .. tostring(name))
-    end
-
-    function GameVisuals.apply() return 0 end
-    function GameVisuals.restore()
-        GameVisuals.Choices = {}
-        syncMask()
-        note("reset")
-    end
-    function GameVisuals.enable()
-        Config.GameVisuals = true
-        resolveRivals()
-        syncMask()
-        note("enabled")
-    end
-    function GameVisuals.disable()
-        Config.GameVisuals = false
-        GameVisuals.Choices = {}
-        maskRemove()
-        note("off")
-    end
-    function GameVisuals.ready() return Rivals.Cosmetics ~= nil end
-
-    function GameVisuals.saveConfig() return false, "not implemented" end
-    function GameVisuals.loadConfig() return false, "not implemented" end
-
-    function GameVisuals.rankNames() return {} end
-    function GameVisuals.rankEloFor() return nil end
-    function GameVisuals.rankNeedsLb() return false end
-    function GameVisuals.resolveRankStamp() return nil end
-    function GameVisuals.rankedCharmsFor() return { "Held weapon" } end
-    function GameVisuals.applyRankedCharm() end
-    function GameVisuals.refreshRankCharmMeta() end
-    function GameVisuals.emoteList() return { "None" } end
-    function GameVisuals.playEmote() end
-    function GameVisuals.summary() return {} end
-end)()
-
--- ============================================================
--- ============ UI — COSMETICS TAB ============
--- ============================================================
-local GLeft = Tabs.Cosmetics:AddLeftGroupbox('GameVisuals')
-GLeft:AddToggle('GameVisualsEnabled', {
-    Text = 'Enable GameVisuals',
-    Default = false,
-    Callback = function(v)
-        if v then GameVisuals.enable() else GameVisuals.disable() end
-    end,
-})
-GLeft:AddToggle('GVUnlockAll', {
-    Text = 'Show all cosmetics locally',
-    Default = false,
-    Callback = function(v) pcall(GameVisuals.setUnlockAll, v) end,
-})
-GLeft:AddToggle('GVRemember', {
-    Text = 'Remember picks',
-    Default = true,
-    Callback = function(v) Config.GVRemember = v end,
-})
-GLeft:AddToggle('GVEmotes', {
-    Text = 'Unlock emotes',
-    Default = false,
-    Callback = function(v) pcall(GameVisuals.syncEmotes, v) end,
-})
-GLeft:AddButton({
-    Text = 'Reset all',
-    Func = function() pcall(GameVisuals.restore) end,
-})
-GLeft:AddDivider()
-GLeft:AddToggle('GVRankCharmOn', {
-    Text = 'Spoof ranked charm rank',
-    Default = false,
-    Callback = function(v) Config.GVRankCharmOn = v end,
-})
-GLeft:AddInput('GVRankCharmLb', {
-    Text = '#N (optional)',
-    Default = '0',
-    Numeric = true,
-    Finished = false,
-    Callback = function(v) Config.GVRankCharmLb = tonumber(v) or 0 end,
-})
-
-local Manual = Tabs.Cosmetics:AddRightGroupbox('Manual skin / charm / wrap picker')
-Manual:AddLabel('Enable GameVisuals, choose a weapon, then select its cosmetics.', true)
-
-local GVWeaponOpt = Manual:AddDropdown('GVWeapon', {
-    Values = { 'None' },
-    Default = 'None',
-    Multi = false,
-    Text = 'Weapon',
-    Callback = function(v) pcall(GameVisuals.setWeapon, v) end,
-})
-Manual:AddDropdown('GVSkin', {
-    Values = { 'None' },
-    Default = 'None',
-    Multi = false,
-    Text = 'Skin',
-    Callback = function(v) pcall(function() GameVisuals.setFor(GameVisuals.lastWeapon or '', 'Skin', v) end) end,
-})
-Manual:AddDropdown('GVCharm', {
-    Values = { 'None' },
-    Default = 'None',
-    Multi = false,
-    Text = 'Charm',
-    Callback = function(v) pcall(function() GameVisuals.setFor(GameVisuals.lastWeapon or '', 'Charm', v) end) end,
-})
-Manual:AddDropdown('GVWrap', {
-    Values = { 'None' },
-    Default = 'None',
-    Multi = false,
-    Text = 'Wrap',
-    Callback = function(v) pcall(function() GameVisuals.setFor(GameVisuals.lastWeapon or '', 'Wrap', v) end) end,
-})
-Manual:AddDropdown('GVFinisher', {
-    Values = { 'None' },
-    Default = 'None',
-    Multi = false,
-    Text = 'Finisher',
-    Callback = function(v) pcall(function() GameVisuals.setFor(GameVisuals.lastWeapon or '', 'Finisher', v) end) end,
-})
-Manual:AddToggle('GVWrapInverted', {
-    Text = 'Invert wrap',
-    Default = false,
-    Callback = function(v) Config.GVWrapInverted = v end,
-})
-
--- Poll catalogs every 3s and refresh dropdown values
-task.spawn(function()
-    while running do
-        task.wait(3)
-        pcall(function()
-            Options.GVWeapon:SetValues(GameVisuals.weaponList())
-        end)
-        pcall(function()
-            Options.GVSkin:SetValues(GameVisuals.skinList())
-        end)
-        pcall(function()
-            Options.GVCharm:SetValues(GameVisuals.charmList())
-        end)
-        pcall(function()
-            Options.GVWrap:SetValues(GameVisuals.wrapList())
-        end)
-        pcall(function()
-            Options.GVFinisher:SetValues(GameVisuals.finisherList())
-        end)
-    end
-end)
-
--- ============================================================
--- ============ UI — WEAPONS TAB (VM & Chams + Hit sounds) ============
--- ============================================================
-local VM = Tabs.Weapons:AddLeftGroupbox('Viewmodel & Chams')
-VM:AddToggle('VMOffsetEnabled', {
-    Text = '6-DOF transform',
-    Default = false,
-    Callback = function(v) Config.VMOffsetEnabled = v end,
-})
-VM:AddSlider('VMOffsetX', { Text = 'X', Default = 0, Min = -5, Max = 5, Rounding = 2, Compact = true,
-    Callback = function(v) Config.VMOffsetX = v end })
-VM:AddSlider('VMOffsetY', { Text = 'Y', Default = 0, Min = -5, Max = 5, Rounding = 2, Compact = true,
-    Callback = function(v) Config.VMOffsetY = v end })
-VM:AddSlider('VMOffsetZ', { Text = 'Z', Default = 0, Min = -5, Max = 5, Rounding = 2, Compact = true,
-    Callback = function(v) Config.VMOffsetZ = v end })
-VM:AddSlider('VMOffsetPitch', { Text = 'Pitch', Default = 0, Min = -180, Max = 180, Rounding = 0, Suffix = '°',
-    Callback = function(v) Config.VMOffsetPitch = math.floor(v) end })
-VM:AddSlider('VMOffsetYaw', { Text = 'Yaw', Default = 0, Min = -180, Max = 180, Rounding = 0, Suffix = '°',
-    Callback = function(v) Config.VMOffsetYaw = math.floor(v) end })
-VM:AddSlider('VMOffsetRoll', { Text = 'Roll', Default = 0, Min = -180, Max = 180, Rounding = 0, Suffix = '°',
-    Callback = function(v) Config.VMOffsetRoll = math.floor(v) end })
-
-VM:AddDivider()
-VM:AddToggle('VMChamsEnabled', {
-    Text = 'Material chams',
-    Default = false,
-    Callback = function(v) Config.VMChamsEnabled = v end,
-})
-VM:AddDropdown('VMChamsMaterial', {
-    Values = { 'ForceField', 'Neon', 'Glass', 'SmoothPlastic' },
-    Default = 'ForceField',
-    Multi = false,
-    Text = 'Material',
-    Callback = function(v) Config.VMChamsMaterial = v end,
-})
-VM:AddSlider('VMChamsTransparency', { Text = 'Transparency', Default = 0.5, Min = 0, Max = 1, Rounding = 2,
-    Callback = function(v) Config.VMChamsTransparency = v end })
-VM:AddToggle('VMDisableTextures', {
-    Text = 'Disable gun textures',
-    Default = false,
-    Callback = function(v) Config.VMDisableTextures = v end,
-})
-
--- Hit sounds
-local SoundBox = Tabs.Weapons:AddRightGroupbox('Hit sounds')
-local soundMap = {
-    Bameware = '130791763', Bell = '146680539', Bubble = '146665237', Click = '146633140',
-    Pop = '146681941', Rust = '146692956', Fart = '130791763', Big = '130792279',
-    Vine = '146606035', Bruh = '146657737', Skeet = '130791733', Neverlose = '146633485',
-    Fatality = '146665147', Bonk = '146661497', Minecraft = '146649495',
-}
-local soundNames = { 'None', 'Custom asset ID' }
-for name in pairs(soundMap) do table.insert(soundNames, name) end
-table.sort(soundNames)
-
-local hit = { enabled = false, name = 'Bell', asset = '', volume = 0.5, pitch = 1 }
-SoundBox:AddToggle('ExtraHitEnabled', { Text = 'Custom hit sound', Default = false,
-    Callback = function(v) hit.enabled = v end })
-SoundBox:AddDropdown('ExtraHitSound', { Values = soundNames, Default = 'Bell', Multi = false, Text = 'Sound',
-    Callback = function(v) hit.name = v end })
-SoundBox:AddInput('ExtraHitAsset', { Text = 'Custom asset ID', Default = '', Finished = false,
-    Callback = function(v) hit.asset = tostring(v) end })
-SoundBox:AddSlider('ExtraHitVolume', { Text = 'Volume', Default = 50, Min = 0, Max = 100, Rounding = 0, Suffix = '%',
-    Callback = function(v) hit.volume = v / 100 end })
-SoundBox:AddSlider('ExtraHitPitch', { Text = 'Pitch', Default = 1, Min = 0.1, Max = 10, Rounding = 1, Suffix = 'x',
-    Callback = function(v) hit.pitch = v end })
-SoundBox:AddButton({ Text = 'Preview sound', Func = function()
-    local id = hit.name == 'Custom asset ID' and hit.asset:match('%d+') or soundMap[hit.name]
-    if not id then notify('Choose a sound or enter an asset ID'); return end
-    local s = Instance.new('Sound')
-    s.SoundId = 'rbxassetid://' .. id
-    s.Volume = hit.volume; s.PlaybackSpeed = hit.pitch
-    s.Parent = SoundService
-    task.spawn(function() pcall(function() s:Play() end); task.wait(3); s:Destroy() end)
-end })
-
--- ============================================================
--- ============ UI — INVENTORY TAB ============
--- ============================================================
-local InvVis = Tabs.Inventory:AddLeftGroupbox('Local catalog visibility')
-InvVis:AddLabel('These controls change the local catalog, not account ownership.', true)
-local state = { kind = 'Skin', rarity = 'Common', name = '', weapon = '', inverted = false }
-InvVis:AddDropdown('ExtraCosmeticType', {
-    Values = { 'Skin', 'Wrap', 'Charm', 'Finisher' },
-    Default = 'Skin',
-    Multi = false,
-    Text = 'Type',
-    Callback = function(v) state.kind = v end,
-})
-InvVis:AddDropdown('ExtraCosmeticRarity', {
-    Values = { 'Common', 'Rare', 'Legendary', 'Mythical', 'Unique', 'Unobtainable' },
-    Default = 'Common',
-    Multi = false,
-    Text = 'Rarity',
-    Callback = function(v) state.rarity = v end,
-})
-InvVis:AddInput('ExtraCosmeticName', { Text = 'Cosmetic name', Default = '', Finished = false,
-    Callback = function(v) state.name = v end })
-InvVis:AddInput('ExtraCosmeticWeapon', { Text = 'Weapon name', Default = '', Finished = false,
-    Callback = function(v) state.weapon = v end })
-InvVis:AddButton({ Text = 'Show all cosmetics', Func = function()
-    GameVisuals.setInventoryVisibility(nil, true); notify('all shown')
-end })
-InvVis:AddButton({ Text = 'Reset catalog overrides', Func = function()
-    GameVisuals.setInventoryVisibility(nil, nil); notify('reset')
-end })
-
-local EquipBox = Tabs.Inventory:AddRightGroupbox('Apply cosmetic')
-EquipBox:AddLabel('Uses the type, name and weapon fields on the left.', true)
-EquipBox:AddToggle('ExtraEquipInverted', { Text = 'Invert wrap', Default = false,
-    Callback = function(v) state.inverted = v end })
-EquipBox:AddButton({ Text = 'Apply to selected / held weapon', Func = function()
-    local weapon = state.weapon
-    if weapon == '' then local held = getEquippedItem(); weapon = held and held.Name end
-    if not weapon or weapon == '' then notify('Enter a weapon or equip one'); return end
-    GameVisuals.setFor(weapon, state.kind, state.name, state.inverted)
-    notify('Applied to ' .. weapon)
-end })
-EquipBox:AddButton({ Text = 'Show all weapons locally', Func = function()
-    GameVisuals.setUnlockWeapons(true)
-end })
-EquipBox:AddButton({ Text = 'Restore weapon catalog', Func = function()
-    GameVisuals.setUnlockWeapons(false)
-    GameVisuals.setWeaponVisibility(nil, nil)
-end })
-
--- ============================================================
--- ============ UI — WORLD TAB ============
--- ============================================================
-local WorldLeft = Tabs.World:AddLeftGroupbox('Lighting')
-WorldLeft:AddToggle('Visuals', { Text = 'Enable', Default = false,
-    Callback = function(v) if v then Visuals.enable() else Visuals.disable() end end })
-WorldLeft:AddDropdown('VisualsPreset', {
-    Values = Visuals.PresetOrder, Default = 'Neutral', Multi = false, Text = 'Preset',
-    Callback = function(v) Visuals.setPreset(v) end,
-})
-WorldLeft:AddDropdown('VisualsGrade', {
-    Values = Visuals.GradeOrder, Default = 'Crisp', Multi = false, Text = 'Color grade',
-    Callback = function(v) Config.VisualsGrade = v end,
-})
-WorldLeft:AddSlider('VisualsGradeStrength', { Text = 'Grade strength', Default = 0.6, Min = 0, Max = 1, Rounding = 2,
-    Callback = function(v) Config.VisualsGradeStrength = v end })
-WorldLeft:AddToggle('VisualsBloom', { Text = 'Bloom', Default = false,
-    Callback = function(v) Config.VisualsBloom = v end })
-WorldLeft:AddSlider('VisualsBloomIntensity', { Text = 'Bloom intensity', Default = 1.0, Min = 0, Max = 3, Rounding = 2,
-    Callback = function(v) Config.VisualsBloomIntensity = v end })
-WorldLeft:AddDivider()
-WorldLeft:AddToggle('VisualsFullbright', { Text = 'Fullbright', Default = false,
-    Callback = function(v) Visuals.toggleFullbright(v) end })
-WorldLeft:AddToggle('VisualsNoFog', { Text = 'No fog', Default = false,
-    Callback = function(v) Visuals.toggleNoFog(v) end })
-WorldLeft:AddToggle('VisualsRainbowMap', { Text = 'Rainbow world', Default = false,
-    Callback = function(v) Visuals.toggleRainbowMap(v) end })
-WorldLeft:AddToggle('VisualsPerformanceMode', { Text = 'Performance mode', Default = false,
-    Callback = function(v) Visuals.togglePerf(v) end })
-
-local WorldRight = Tabs.World:AddRightGroupbox('Weather')
-WorldRight:AddToggle('Weather', { Text = 'Enable', Default = false,
-    Callback = function(v) if v then Weather.enableWeather() else Weather.disableWeather() end end })
-WorldRight:AddDropdown('WeatherType', { Values = Weather.TypeOrder, Default = 'Rain', Multi = false, Text = 'Precipitation',
-    Callback = function(v) Weather.setType(v) end })
-WorldRight:AddSlider('WeatherIntensity', { Text = 'Intensity', Default = 1.0, Min = 0.15, Max = 2, Rounding = 2,
-    Callback = function(v) Weather.setIntensity(v) end })
-WorldRight:AddSlider('WeatherSoundVolume', { Text = 'Volume', Default = 0.35, Min = 0, Max = 1, Rounding = 2,
-    Callback = function(v) Weather.setSoundVolume(v) end })
-WorldRight:AddToggle('WeatherMood', { Text = 'Mood tint', Default = true,
-    Callback = function(v) Weather.toggleMood(v) end })
-WorldRight:AddDivider('Atmosphere')
-WorldRight:AddToggle('WeatherStorm', { Text = 'Storm & lightning', Default = false,
-    Callback = function(v) Weather.toggleStorm(v) end })
-WorldRight:AddToggle('WeatherStormFlash', { Text = 'Sky flash', Default = true,
-    Callback = function(v) Config.WeatherStormFlash = v end })
-WorldRight:AddToggle('WeatherMeteors', { Text = 'Meteors', Default = false,
-    Callback = function(v) Weather.toggleMeteors(v) end })
-WorldRight:AddSlider('WeatherMeteorRate', { Text = 'Meteor rate', Default = 1.0, Min = 0.25, Max = 3, Rounding = 2,
-    Callback = function(v) Weather.setMeteorRate(v) end })
-WorldRight:AddToggle('WeatherShootingStars', { Text = 'Shooting stars', Default = false,
-    Callback = function(v) Weather.toggleShootingStars(v) end })
-WorldRight:AddToggle('SkyboxHideCelestial', { Text = 'Hide celestial', Default = false,
-    Callback = function(v) Weather.toggleCelestial(v) end })
-WorldRight:AddToggle('WeatherGodRays', { Text = 'God rays', Default = false,
-    Callback = function(v) Weather.toggleGodRays(v) end })
-WorldRight:AddToggle('WeatherRainbow', { Text = 'Rainbow', Default = false,
-    Callback = function(v) Weather.toggleRainbow(v) end })
-WorldRight:AddToggle('WeatherPuddles', { Text = 'Puddles', Default = false,
-    Callback = function(v) Weather.togglePuddles(v) end })
-WorldRight:AddToggle('WeatherClockDial', { Text = 'Clock dial', Default = false,
-    Callback = function(v) Weather.toggleClock(v) end })
-
--- Effects & Camera groupboxes (split — Linoria has no inner tabboxes)
-local FXBox = Tabs.World:AddLeftGroupbox('Effects')
-FXBox:AddToggle('VisualsHolograms', { Text = 'On-hit holograms', Default = false,
-    Callback = function(v) Config.VisualsHolograms = v end })
-FXBox:AddDropdown('VisualsHologramStyle', { Values = Visuals.HologramStyleOrder, Default = 'Orb', Multi = false,
-    Text = 'Style', Callback = function(v) Config.VisualsHologramStyle = v end })
-FXBox:AddSlider('VisualsHologramDuration', { Text = 'Duration', Default = 3.5, Min = 0.5, Max = 5, Rounding = 1,
-    Callback = function(v) Config.VisualsHologramDuration = v end })
-FXBox:AddSlider('VisualsHologramRange', { Text = 'Max range', Default = 300, Min = 20, Max = 300, Rounding = 0,
-    Callback = function(v) Config.VisualsHologramRange = math.floor(v) end })
-FXBox:AddSlider('VisualsHologramVisibility', { Text = 'Visibility', Default = 1.4, Min = 0.2, Max = 2, Rounding = 1,
-    Callback = function(v) Config.VisualsHologramVisibility = v end })
-FXBox:AddToggle('VisualsHologramLethal', { Text = 'Gold kill aura', Default = true,
-    Callback = function(v) Config.VisualsHologramLethal = v end })
-FXBox:AddButton({ Text = 'Preview on your character', Func = function()
-    Visuals.previewHologram(LP.Character)
-end })
-
-local CamBox = Tabs.World:AddRightGroupbox('Camera')
-CamBox:AddToggle('CameraFovOverride', { Text = 'FOV override', Default = false,
-    Callback = function(v) Config.CameraFovOverride = v end })
-CamBox:AddSlider('CameraFovAmount', { Text = 'Field of view', Default = 90, Min = 40, Max = 130, Rounding = 0,
-    Callback = function(v) Config.CameraFovAmount = math.floor(v) end })
-CamBox:AddToggle('CameraAspectRatioEnabled', { Text = 'Aspect ratio stretch', Default = false,
-    Callback = function(v) Config.CameraAspectRatioEnabled = v end })
-CamBox:AddSlider('CameraAspectRatioX', { Text = 'Width', Default = 4, Min = 1, Max = 21, Rounding = 0,
-    Callback = function(v) Config.CameraAspectRatioX = math.floor(v) end })
-CamBox:AddSlider('CameraAspectRatioY', { Text = 'Height', Default = 3, Min = 1, Max = 21, Rounding = 0,
-    Callback = function(v) Config.CameraAspectRatioY = math.floor(v) end })
-CamBox:AddToggle('ThirdPersonEnabled', { Text = 'Third person', Default = false,
-    Callback = function(v) Config.ThirdPersonEnabled = v end })
-CamBox:AddSlider('ThirdPersonDistance', { Text = 'Distance', Default = 12, Min = 4, Max = 30, Rounding = 0,
-    Callback = function(v) Config.ThirdPersonDistance = math.floor(v) end })
-CamBox:AddToggle('VisualsVignette', { Text = 'Vignette', Default = false,
-    Callback = function(v) Config.VisualsVignette = v end })
-CamBox:AddSlider('VisualsVignetteStrength', { Text = 'Vignette strength', Default = 0.6, Min = 0, Max = 1, Rounding = 2,
-    Callback = function(v) Config.VisualsVignetteStrength = v end })
-CamBox:AddToggle('VisualsLetterbox', { Text = 'Letterbox', Default = false,
-    Callback = function(v) Config.VisualsLetterbox = v end })
-CamBox:AddSlider('VisualsLetterboxSize', { Text = 'Letterbox size', Default = 0.10, Min = 0.04, Max = 0.18, Rounding = 2,
-    Callback = function(v) Config.VisualsLetterboxSize = v end })
-CamBox:AddToggle('VisualsDOF', { Text = 'Depth of field', Default = false,
-    Callback = function(v) Config.VisualsDOF = v end })
-CamBox:AddSlider('VisualsDOFDistance', { Text = 'Focus distance', Default = 28, Min = 5, Max = 100, Rounding = 0,
-    Callback = function(v) Config.VisualsDOFDistance = v end })
-CamBox:AddSlider('VisualsDOFBlur', { Text = 'Blur', Default = 0.5, Min = 0, Max = 1, Rounding = 2,
-    Callback = function(v) Config.VisualsDOFBlur = v end })
-CamBox:AddToggle('VisualsCameraSway', { Text = 'Camera sway', Default = false,
-    Callback = function(v) Config.VisualsCameraSway = v end })
-CamBox:AddSlider('VisualsCameraSwayAmount', { Text = 'Sway amount', Default = 0.5, Min = 0, Max = 1, Rounding = 2,
-    Callback = function(v) Config.VisualsCameraSwayAmount = v end })
-
--- ============================================================
--- ============ UI — SPOOFER TAB ============
--- ============================================================
-local SpoofLeft = Tabs.Spoofer:AddLeftGroupbox('Name & Identity')
-SpoofLeft:AddToggle('SpooferNameEnabled', { Text = 'Spoof name', Default = false,
-    Callback = function(v) Config.SpooferNameEnabled = v end })
-SpoofLeft:AddInput('SpooferName', { Text = 'Username', Default = 'ProPlayer', Finished = false,
-    Callback = function(v) Config.SpooferName = v end })
-SpoofLeft:AddInput('SpooferDisplayName', { Text = 'Display name', Default = 'ProPlayer', Finished = false,
-    Callback = function(v) Config.SpooferDisplayName = v end })
-
-SpoofLeft:AddDivider('Ranked & Stats')
-SpoofLeft:AddToggle('SpooferLevelEnabled', { Text = 'Spoof level', Default = false,
-    Callback = function(v) Config.SpooferLevelEnabled = v end })
-SpoofLeft:AddInput('SpooferLevel', { Text = 'Level', Default = '100', Numeric = true, Finished = false,
-    Callback = function(v) Config.SpooferLevel = tonumber(v) or 100 end })
-SpoofLeft:AddToggle('SpooferRankedEloEnabled', { Text = 'Spoof ELO', Default = false,
-    Callback = function(v) Config.SpooferRankedEloEnabled = v end })
-SpoofLeft:AddInput('SpooferRankedElo', { Text = 'ELO rating', Default = '2400', Numeric = true, Finished = false,
-    Callback = function(v) Config.SpooferRankedElo = tonumber(v) or 2400 end })
-SpoofLeft:AddToggle('SpooferCasualWinsEnabled', { Text = 'Spoof casual wins', Default = false,
-    Callback = function(v) Config.SpooferCasualWinsEnabled = v end })
-SpoofLeft:AddInput('SpooferCasualWins', { Text = 'Casual wins', Default = '500', Numeric = true, Finished = false,
-    Callback = function(v) Config.SpooferCasualWins = tonumber(v) or 500 end })
-SpoofLeft:AddToggle('SpooferRankedWinsEnabled', { Text = 'Spoof ranked wins', Default = false,
-    Callback = function(v) Config.SpooferRankedWinsEnabled = v end })
-SpoofLeft:AddInput('SpooferRankedWins', { Text = 'Ranked wins', Default = '250', Numeric = true, Finished = false,
-    Callback = function(v) Config.SpooferRankedWins = tonumber(v) or 250 end })
-SpoofLeft:AddToggle('SpooferWinPercentEnabled', { Text = 'Spoof winrate', Default = false,
-    Callback = function(v) Config.SpooferWinPercentEnabled = v end })
-SpoofLeft:AddInput('SpooferWinPercent', { Text = 'Winrate %', Default = '75', Numeric = true, Finished = false,
-    Callback = function(v) Config.SpooferWinPercent = tonumber(v) or 75 end })
-SpoofLeft:AddToggle('SpooferWinStreakEnabled', { Text = 'Spoof win streak', Default = false,
-    Callback = function(v) Config.SpooferWinStreakEnabled = v end })
-SpoofLeft:AddInput('SpooferWinStreak', { Text = 'Win streak', Default = '25', Numeric = true, Finished = false,
-    Callback = function(v) Config.SpooferWinStreak = tonumber(v) or 25 end })
-SpoofLeft:AddToggle('SpooferFavoriteMapEnabled', { Text = 'Spoof favorite map', Default = false,
-    Callback = function(v) Config.SpooferFavoriteMapEnabled = v end })
-SpoofLeft:AddInput('SpooferFavoriteMap', { Text = 'Map name', Default = 'Arena', Finished = false,
-    Callback = function(v) Config.SpooferFavoriteMap = v end })
-
--- Season charm spoof boxes (Spoofer tab right)
-local seasons = {}
-local names = { [0] = 'Zero', [1] = 'Warp', [2] = 'Polar', [3] = 'Fame' }
-local ranks = { 'Use custom ELO', 'Unranked', 'Bronze 1', 'Bronze 2', 'Bronze 3', 'Silver 1', 'Silver 2', 'Silver 3',
-    'Gold 1', 'Gold 2', 'Gold 3', 'Platinum 1', 'Platinum 2', 'Platinum 3',
-    'Diamond 1', 'Diamond 2', 'Diamond 3', 'Onyx 1', 'Onyx 2', 'Onyx 3', 'Nemesis', 'Archnemesis' }
-
-local SeasonsBox1 = Tabs.Spoofer:AddRightGroupbox('Seasons 0–1')
-local SeasonsBox2 = Tabs.Spoofer:AddRightGroupbox('Seasons 2–3')
-local seasonBoxes = { SeasonsBox1, SeasonsBox2 }
-for i = 0, 3 do
-    local cfg = { enabled = false, rank = 'Use custom ELO', elo = 0, arch = 1 }
-    seasons[i] = cfg
-    local box = seasonBoxes[i < 2 and 1 or 2]
-    box:AddLabel('Season ' .. i .. ' — ' .. names[i])
-    box:AddToggle('SeasonELO' .. i .. 'Enabled', {
-        Text = 'Enable season appearance',
-        Default = false,
-        Callback = function(v) cfg.enabled = v end,
-    })
-    box:AddDropdown('SeasonELO' .. i .. 'Rank', {
-        Values = ranks, Default = 'Use custom ELO', Multi = false, Text = 'Rank',
-        Callback = function(v) cfg.rank = v end,
-    })
-    box:AddInput('SeasonELO' .. i .. 'ELO', {
-        Text = 'Custom ELO', Default = '0', Numeric = true, Finished = false,
-        Callback = function(v) cfg.elo = tonumber(v) or 0 end,
-    })
-    box:AddSlider('SeasonELO' .. i .. 'Leaderboard', {
-        Text = 'Leaderboard rank', Default = 1, Min = 1, Max = 100, Rounding = 0,
-        Callback = function(v) cfg.arch = v end,
-    })
-end
-
--- ============================================================
--- ============ UI — MISC TAB ============
--- ============================================================
-local MiscCfg = {
-    anonymous = false, avatar = false, userId = LP.UserId,
-    display = false, username = false,
-    displayName = LP.DisplayName, userName = LP.Name,
-}
-local NamesBox = Tabs.Misc:AddLeftGroupbox('Names and thumbnails')
-local tracked = setmetatable({}, { __mode = 'k' })
-local function replacePlain(text, old, new)
-    if old == '' then return text end
-    local pattern = old:gsub('([^%w])', '%%%1')
-    return (text:gsub(pattern, function() return new end))
-end
-local function desiredText(original)
-    local text = original
-    if MiscCfg.anonymous then
-        for _, player in ipairs(Players:GetPlayers()) do
-            local fake = 'Player' .. tostring(player.UserId % 100000)
-            text = replacePlain(text, player.DisplayName, fake)
-            text = replacePlain(text, player.Name, fake)
-        end
-    else
-        if MiscCfg.display then text = replacePlain(text, LP.DisplayName, MiscCfg.displayName) end
-        if MiscCfg.username then text = replacePlain(text, LP.Name, MiscCfg.userName) end
-    end
-    return text
-end
-local function registerText(obj)
-    if tracked[obj] or not (obj:IsA('TextLabel') or obj:IsA('TextButton')) then return end
-    local saved = { original = obj.Text }
-    tracked[obj] = saved
-    connect(obj:GetPropertyChangedSignal('Text'), function()
-        saved.original = obj.Text
-        pcall(function() obj.Text = desiredText(obj.Text) end)
-    end)
-    pcall(function() obj.Text = desiredText(obj.Text) end)
-end
-local function scanText()
-    local gui = LP:FindFirstChildOfClass('PlayerGui')
-    if gui then
-        for _, obj in ipairs(gui:GetDescendants()) do registerText(obj) end
-        connect(gui.DescendantAdded, registerText)
     end
 end
-NamesBox:AddInput('ExtraDisplayName', { Text = 'Display name', Default = LP.DisplayName, Finished = false,
-    Callback = function(v) MiscCfg.displayName = v; scanText() end })
-NamesBox:AddToggle('ExtraDisplayNameEnabled', { Text = 'Override display name', Default = false,
-    Callback = function(v) MiscCfg.display = v; scanText() end })
-NamesBox:AddInput('ExtraUsername', { Text = 'Username', Default = LP.Name, Finished = false,
-    Callback = function(v) MiscCfg.userName = v; scanText() end })
-NamesBox:AddToggle('ExtraUsernameEnabled', { Text = 'Override username', Default = false,
-    Callback = function(v) MiscCfg.username = v; scanText() end })
-NamesBox:AddToggle('ExtraAnonymous', { Text = 'Anonymous names', Default = false,
-    Callback = function(v) MiscCfg.anonymous = v; scanText() end })
 
--- ============================================================
--- ============ UI SETTINGS ============
--- ============================================================
-local UISGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
-UISGroup:AddButton('Unload', function()
-    if BurgadaSpooferUnload then BurgadaSpooferUnload() end
-    Library:Unload()
-end)
-UISGroup:AddKeyPicker('MenuKeybind', {
-    Default = 'RightShift',
-    Mode = 'Toggle',
-    Text = 'Open / close menu',
-    NoUI = true,
-})
-Library.ToggleKeybind = Options.MenuKeybind
-
-if ThemeManager and ThemeManager.SetLibrary then
-    ThemeManager:SetLibrary(Library)
-    ThemeManager:SetFolder('BurgadaLua/spoofer')
-    ThemeManager:ApplyToTab(Tabs['UI Settings'])
-end
-if SaveManager and SaveManager.SetLibrary then
-    SaveManager:SetLibrary(Library)
-    SaveManager:IgnoreThemeSettings()
-    SaveManager:SetFolder('BurgadaLua/spoofer-config')
-    SaveManager:BuildConfigSection(Tabs['UI Settings'])
-end
-
--- ============================================================
--- FX HOOKS — hook Gun._ShootEffect for shot detection
--- ============================================================
-local function installShotEffects()
-    if Rivals.Gun == nil or type(Rivals.Gun._ShootEffect) ~= 'function' then return end
-    local original = Rivals.Gun._ShootEffect
-    local replacement = function(item, results, ...)
-        local returned = table.pack(original(item, results, ...))
-        pcall(function()
-            if not running or type(results) ~= 'table' then return end
-            local fighter = item and item.ClientFighter
-            local mine = (fighter and (fighter.Player == LP or fighter.IsLocalPlayer == true)) or item == getEquippedItem()
-            if not mine then return end
-            State.Shots = State.Shots + 1
-            local seen = {}
-            for _, entry in pairs(results) do
-                if type(entry) == 'table' then
-                    local part = entry[utf8.char(1)] or entry.Instance or entry.HitPart
-                    if typeof(part) == 'Instance' then
-                        local model = part:FindFirstAncestorOfClass('Model')
-                        while model and model ~= workspace do
-                            if model:IsA('Model') and model:FindFirstChildOfClass('Humanoid') then
-                                if model ~= LP.Character and not seen[model] then
-                                    seen[model] = true
-                                    if Config.VisualsHolograms then Visuals.onShotHit(model) end
-                                end
-                                break
-                            end
-                            model = model.Parent
-                        end
-                    end
-                end
-            end
-        end)
-        return table.unpack(returned, 1, returned.n)
-    end
-    pcall(patch, Rivals.Gun, '_ShootEffect', replacement)
-end
-
--- ============================================================
--- MAIN LOOP
--- ============================================================
-SpooferConn = RunService.Heartbeat:Connect(function()
-    if not running then return end
-    resolveRivals()
-    if Rivals.Gun and not State._shotHooked then
-        pcall(installShotEffects)
-        if Rivals.Gun and type(Rivals.Gun._ShootEffect) == 'function' then
-            State._shotHooked = true
-        end
-    end
-end)
-
--- ============================================================
--- UNLOAD
--- ============================================================
-function BurgadaSpooferUnload()
-    running = false
-    if SpooferConn then SpooferConn:Disconnect() end
-    for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
-    GameVisuals.uiAlive = false
-    pcall(Weather.unload)
-    pcall(Visuals.unload)
-    pcall(GameVisuals.disable)
-    for i = #restorers, 1, -1 do pcall(restorers[i]) end
-    env.__BurgadaSpoofer = nil
-end
-env.__BurgadaSpoofer = function()
-    if BurgadaSpooferUnload then BurgadaSpooferUnload() end
-    pcall(function() Library:Unload() end)
-end
-
--- ============================================================
--- CONFIG LOAD
--- ============================================================
-if SaveManager and SaveManager.LoadAutoloadConfig then
-    pcall(function() SaveManager:LoadAutoloadConfig() end)
-end
-
--- ============================================================
--- INIT
--- ============================================================
-task.spawn(function()
-    pcall(function() Visuals.init() end)
-    pcall(function() Weather.init() end)
-end)
-
-Library:Notify('Burgada Spoofer v1 loaded — Linoria build')
+-- CHUNK 1 ENDS HERE. Chunk 2 begins with:
+--   local Visuals = {}
+--   ;(function()
+--       ... lighting engine, presets, holograms, beam tracers, kill effects ...
+--   end)()
