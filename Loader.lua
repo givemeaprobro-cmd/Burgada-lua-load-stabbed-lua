@@ -1,7 +1,7 @@
 -- language: Lua (Roblox Luau), file: Loader.lua
 -- executor: Delta Android (also PC)
 -- paste after attaching. standalone.
--- loads Rivals.lua / Stabbed.lua / Spoofer.lua from the same repo by loadstring.
+-- loads Rivals.lua / Stabbed.lua / Spoofer.lua / unnamed.lua / kichia.lua from the same repo by loadstring.
 
 -- ============================================================
 -- PRE-FLIGHT CLEANUP
@@ -37,6 +37,8 @@ local URLS = {
     Rivals  = REPO_BASE .. 'Rivals.lua',
     Stabbed = REPO_BASE .. 'Stabbed.lua',
     Spoofer = REPO_BASE .. 'spoofer.lua',
+    Unnamed = REPO_BASE .. 'unnamed.lua',
+    Kichia  = REPO_BASE .. 'kichia.lua',
 }
 
 -- ============================================================
@@ -158,6 +160,14 @@ GameGroup:AddButton('Spoofer', function()
     loadTarget('Spoofer')
 end)
 
+GameGroup:AddButton('Unnamed', function()
+    loadTarget('Unnamed')
+end)
+
+GameGroup:AddButton('Kichia', function()
+    loadTarget('Kichia')
+end)
+
 -- ============================================================
 -- INFO
 -- ============================================================
@@ -165,6 +175,8 @@ local InfoGroup = SelectTab:AddRightGroupbox('Info')
 InfoGroup:AddLabel('Rivals  ->  combat, visuals, movement, bypass, anti-aim')
 InfoGroup:AddLabel('Stabbed ->  rage backstab loop')
 InfoGroup:AddLabel('Spoofer ->  cosmetics, VM chams, weather, FX, name spoof')
+InfoGroup:AddLabel('Unnamed ->  see file')
+InfoGroup:AddLabel('Kichia  ->  see file')
 InfoGroup:AddLabel('')
 InfoGroup:AddLabel('Loading replaces this window with the selected suite.')
 InfoGroup:AddLabel('Re-run the loader to switch games.')
@@ -172,4 +184,4 @@ InfoGroup:AddLabel('Re-run the loader to switch games.')
 -- ============================================================
 -- READY
 -- ============================================================
-Library:Notify('Burgada Loader ready — pick Rivals, Stabbed, or Spoofer')
+Library:Notify('Burgada Loader ready — pick Rivals, Stabbed, Spoofer, Unnamed, or Kichia')
